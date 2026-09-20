@@ -17,6 +17,7 @@ namespace SaveOpt
                 Sink.Start();
                 SavePatch.Apply(harmony);
                 SerializerPatch.Apply(harmony);
+                IsDefinedPatch.Apply(harmony);
 
                 MethodInfo quit = AccessTools.Method(typeof(Game), "OnApplicationQuit");
                 if (quit != null)
@@ -41,6 +42,7 @@ namespace SaveOpt
             Sink.Stop();
             Debug.Log(SavePatch.Summary());
             Debug.Log(SerializerPatch.Summary());
+            Debug.Log(IsDefinedCache.Summary());
         }
     }
 }
