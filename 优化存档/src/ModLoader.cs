@@ -19,6 +19,7 @@ namespace SaveOpt
                 SerializerPatch.Apply(harmony);
                 IsDefinedPatch.Apply(harmony);
                 GcTuner.Apply(harmony);
+                ThumbnailAsync.Apply(harmony);
 
                 MethodInfo quit = AccessTools.Method(typeof(Game), "OnApplicationQuit");
                 if (quit != null)
@@ -41,12 +42,15 @@ namespace SaveOpt
         {
             Sink.Flush(15000);
             Sink.Stop();
+            ThumbnailAsync.Flush(5000);
+            ThumbnailAsync.Stop();
             Debug.Log(SavePatch.Summary());
             Debug.Log(SerializerPatch.Summary());
             Debug.Log(IsDefinedCache.Summary());
             Debug.Log(SaveBuffer.Summary());
             Debug.Log(FieldPlanner.Summary());
             Debug.Log(GcTuner.Summary());
+            Debug.Log(ThumbnailAsync.Summary());
         }
     }
 }
