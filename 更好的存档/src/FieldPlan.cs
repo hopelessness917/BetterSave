@@ -85,7 +85,7 @@ namespace SaveOpt
                 rejections++;
                 if (rejections <= 10)
                 {
-                    Debug.LogError("[优化存档] ★快速写入字节不一致，已永久回退原路径: "
+                    Debug.LogError("[更好的存档] ★快速写入字节不一致，已永久回退原路径: "
                         + plan.Field.DeclaringType.Name + "." + plan.Field.Name + " code=" + plan.Code
                         + " 快速=" + fastBytes.Length + "B 参考=" + refBytes.Length + "B");
                 }
@@ -96,7 +96,7 @@ namespace SaveOpt
                 rejections++;
                 if (rejections <= 10)
                 {
-                    Debug.LogError("[优化存档] ★快速写入异常，已永久回退原路径: "
+                    Debug.LogError("[更好的存档] ★快速写入异常，已永久回退原路径: "
                         + plan.Field.DeclaringType.Name + "." + plan.Field.Name + " : " + e.Message);
                 }
             }
@@ -236,7 +236,7 @@ namespace SaveOpt
             }
             catch (Exception e)
             {
-                Debug.LogWarning("[优化存档] 快速写入编译失败，回退原路径: " + f.DeclaringType.Name + "." + f.Name + " : " + e.Message);
+                Debug.LogWarning("[更好的存档] 快速写入编译失败，回退原路径: " + f.DeclaringType.Name + "." + f.Name + " : " + e.Message);
                 return null;
             }
         }
@@ -256,7 +256,7 @@ namespace SaveOpt
         internal static string Summary()
         {
             long total = fastCalls + slowCalls;
-            var sb = new System.Text.StringBuilder("[优化存档] 第五刀：快速写入 " + fastCalls + " 次");
+            var sb = new System.Text.StringBuilder("[更好的存档] 第五刀：快速写入 " + fastCalls + " 次");
             if (total > 0)
             {
                 sb.Append("（占 ").Append((fastCalls * 100.0 / total).ToString("F1")).Append("%）");

@@ -53,14 +53,14 @@ namespace SaveOpt
             {
                 env = "探测失败: " + e.GetType().Name + " " + e.Message;
             }
-            Debug.Log("[优化存档] GC 环境: " + env);
+            Debug.Log("[更好的存档] GC 环境: " + env);
 
             ResolveApis();
 
             if (!InterventionEnabled)
             {
                 opportunistic = false;
-                Debug.Log("[优化存档] 自动干预已停用（第七刀实测无收益：23 分钟内执行 2 次，"
+                Debug.Log("[更好的存档] 自动干预已停用（第七刀实测无收益：23 分钟内执行 2 次，"
                     + "阻止存档 GC 0 次、却让总回收次数从 9 增到 11）。"
                     + "仍保留每轮存档的 GC / 堆 / CPU 监控");
                 return;
@@ -72,7 +72,7 @@ namespace SaveOpt
                 MethodInfo late = appType == null ? null : AccessTools.Method(appType, "LateUpdate");
                 if (late == null)
                 {
-                    Debug.LogWarning("[优化存档] 找不到 App.LateUpdate，第六/七刀无法驱动");
+                    Debug.LogWarning("[更好的存档] 找不到 App.LateUpdate，第六/七刀无法驱动");
                     opportunistic = false;
                     return;
                 }
@@ -81,13 +81,13 @@ namespace SaveOpt
             }
             catch (Exception e)
             {
-                Debug.LogError("[优化存档] 挂载 App.LateUpdate 失败: " + e.Message);
+                Debug.LogError("[更好的存档] 挂载 App.LateUpdate 失败: " + e.Message);
                 opportunistic = false;
                 return;
             }
 
             baseline = SafeHeap();
-            Debug.Log("[优化存档] App.LateUpdate 已挂载（" + (incremental ? "每帧驱动增量 GC" : "机会性回收：暂停或失焦时还债") + "）");
+            Debug.Log("[更好的存档] App.LateUpdate 已挂载（" + (incremental ? "每帧驱动增量 GC" : "机会性回收：暂停或失焦时还债") + "）");
         }
 
         private static void ResolveApis()
@@ -110,7 +110,7 @@ namespace SaveOpt
             }
             catch (Exception) { }
 
-            Debug.Log("[优化存档] 机会性回收探测: 暂停=" + (instanceProp != null && pausedProp != null)
+            Debug.Log("[更好的存档] 机会性回收探测: 暂停=" + (instanceProp != null && pausedProp != null)
                 + "，失焦=" + (focusField != null)
                 + "，阈值=" + (DebtThresholdBytes / 1048576) + " MB，最短间隔=" + (int)MinIntervalSeconds + " s");
         }
@@ -208,7 +208,7 @@ namespace SaveOpt
                 baseline = after;
                 opportunisticCount++;
                 opportunisticMs += sw.Elapsed.TotalMilliseconds;
-                Debug.Log("[优化存档] 机会性回收" + (paused ? "（游戏已暂停）" : "（窗口失焦）")
+                Debug.Log("[更好的存档] 机会性回收" + (paused ? "（游戏已暂停）" : "（窗口失焦）")
                     + "：还债 " + (debt / 1048576) + " MB，耗时 " + ((long)sw.Elapsed.TotalMilliseconds)
                     + " ms，堆 " + (heap / 1048576) + " -> " + (after / 1048576) + " MB");
             }
@@ -262,7 +262,7 @@ namespace SaveOpt
                 }
                 catch (Exception) { }
             }
-            return "[优化存档] 本轮存档期间 GC: 第0代 +" + (GC.CollectionCount(0) - c0)
+            return "[更好的存档] 本轮存档期间 GC: 第0代 +" + (GC.CollectionCount(0) - c0)
                 + "，第1代 +" + (GC.CollectionCount(1) - c1)
                 + "，第2代 +" + (GC.CollectionCount(2) - c2)
                 + " ｜ 堆 " + (heapBefore / 1048576) + " -> " + (after / 1048576)
@@ -274,10 +274,10 @@ namespace SaveOpt
         {
             if (!InterventionEnabled)
             {
-                return "[优化存档] 监控已结束：自动干预停用 ｜ GC 环境: " + env;
+                return "[更好的存档] 监控已结束：自动干预停用 ｜ GC 环境: " + env;
             }
 
-            var sb = new System.Text.StringBuilder("[优化存档] ");
+            var sb = new System.Text.StringBuilder("[更好的存档] ");
             sb.Append(incremental
                 ? ("第六刀（增量 GC 驱动）：时间片 " + slices + " 次，完成整轮 " + completed + " 次")
                 : ("第七刀（机会性回收）：执行 " + opportunisticCount + " 次，累计 " + ((long)opportunisticMs)

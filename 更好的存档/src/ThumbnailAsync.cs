@@ -52,7 +52,7 @@ namespace SaveOpt
             MethodInfo writeAll = AccessTools.Method(typeof(File), "WriteAllBytes", new[] { typeof(string), typeof(byte[]) });
             if (target == null || writeAll == null)
             {
-                Debug.LogWarning("[优化存档] 找不到 Timelapser.WriteToPng 或 File.WriteAllBytes，缩略图后台化未挂载");
+                Debug.LogWarning("[更好的存档] 找不到 Timelapser.WriteToPng 或 File.WriteAllBytes，缩略图后台化未挂载");
                 return;
             }
 
@@ -64,13 +64,13 @@ namespace SaveOpt
             }
             catch (Exception e)
             {
-                Debug.LogError("[优化存档] 缩略图 transpiler 挂载失败: " + e.Message);
+                Debug.LogError("[更好的存档] 缩略图 transpiler 挂载失败: " + e.Message);
                 return;
             }
 
             if (swapped != 1)
             {
-                Debug.LogError("[优化存档] 缩略图替换点数量异常（" + swapped + "），缩略图后台化未启用");
+                Debug.LogError("[更好的存档] 缩略图替换点数量异常（" + swapped + "），缩略图后台化未启用");
                 return;
             }
 
@@ -80,13 +80,13 @@ namespace SaveOpt
             }
             catch (Exception e)
             {
-                Debug.LogError("[优化存档] File.WriteAllBytes 挂载失败: " + e.Message);
+                Debug.LogError("[更好的存档] File.WriteAllBytes 挂载失败: " + e.Message);
                 return;
             }
 
             Start();
             enabled = true;
-            Debug.Log("[优化存档] 缩略图 PNG 编码已移入后台（EncodeToPNG -> EncodeArrayToPNG + 独立线程；"
+            Debug.Log("[更好的存档] 缩略图 PNG 编码已移入后台（EncodeToPNG -> EncodeArrayToPNG + 独立线程；"
                 + "首张做字节级比对，行序自动判定，不一致则永久回退）");
         }
 
@@ -141,7 +141,7 @@ namespace SaveOpt
             {
                 enabled = false;
                 fallbacks++;
-                Debug.LogError("[优化存档] 缩略图像素抓取失败，缩略图后台化已停用: " + e.Message);
+                Debug.LogError("[更好的存档] 缩略图像素抓取失败，缩略图后台化已停用: " + e.Message);
                 return ImageConversion.EncodeToPNG(tex);
             }
         }
@@ -239,7 +239,7 @@ namespace SaveOpt
 
                 if (jobs == 1 || mismatch)
                 {
-                    Debug.Log("[优化存档] 缩略图后台编码：首张 " + job.Width + "x" + job.Height
+                    Debug.Log("[更好的存档] 缩略图后台编码：首张 " + job.Width + "x" + job.Height
                         + "，" + png.Length + " 字节，后台耗时 " + ms + " ms（主线程抓像素 "
                         + lastMainMs + " ms）"
                         + (job.Reference != null ? "；同一张在主线程用原方法编码要 " + refEncodeMs + " ms —— 这就是本刀从主线程拿走的部分" : "")
@@ -251,7 +251,7 @@ namespace SaveOpt
             catch (Exception e)
             {
                 fallbacks++;
-                Debug.LogError("[优化存档] 缩略图后台写盘失败: " + job.Path + " : " + e.Message);
+                Debug.LogError("[更好的存档] 缩略图后台写盘失败: " + job.Path + " : " + e.Message);
             }
             finally
             {
@@ -321,9 +321,9 @@ namespace SaveOpt
         {
             if (!enabled && jobs == 0)
             {
-                return "[优化存档] 缩略图后台化：未启用";
+                return "[更好的存档] 缩略图后台化：未启用";
             }
-            return "[优化存档] 缩略图后台化" + (enabled ? "" : "（已停用）") + "：后台编码 " + jobs
+            return "[更好的存档] 缩略图后台化" + (enabled ? "" : "（已停用）") + "：后台编码 " + jobs
                 + " 张，累计 " + totalEncodeMs + " ms，落盘 " + (bytes / 1048576.0).ToString("F2")
                 + " MB，最近一张 " + lastEncodeMs + " ms；主线程只做像素抓取 " + lastMainMs
                 + " ms；回退 " + fallbacks + " 次"

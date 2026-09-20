@@ -7,8 +7,8 @@
     <ProjectGuid>{D6169594-3B07-4C2C-B86B-9462C89814CC}</ProjectGuid>
     <OutputType>Library</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>优化存档</RootNamespace>
-    <AssemblyName>优化存档</AssemblyName>
+    <RootNamespace>更好的存档</RootNamespace>
+    <AssemblyName>更好的存档</AssemblyName>
     <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <Deterministic>true</Deterministic>

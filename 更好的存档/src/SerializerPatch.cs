@@ -51,7 +51,7 @@ namespace SaveOpt
             }
             catch (Exception e)
             {
-                Debug.LogWarning("[优化存档] 字段访问器编译失败，回退反射: " + f.DeclaringType.Name + "." + f.Name + " : " + e.Message);
+                Debug.LogWarning("[更好的存档] 字段访问器编译失败，回退反射: " + f.DeclaringType.Name + "." + f.Name + " : " + e.Message);
                 fallback++;
                 return o => f.GetValue(o);
             }
@@ -69,7 +69,7 @@ namespace SaveOpt
             }
             catch (Exception e)
             {
-                Debug.LogWarning("[优化存档] 属性访问器编译失败，回退反射: " + p.DeclaringType.Name + "." + p.Name + " : " + e.Message);
+                Debug.LogWarning("[更好的存档] 属性访问器编译失败，回退反射: " + p.DeclaringType.Name + "." + p.Name + " : " + e.Message);
                 fallback++;
                 return o => p.GetValue(o, null);
             }
@@ -93,24 +93,29 @@ namespace SaveOpt
             MethodInfo target = AccessTools.Method(typeof(KSerialization.SerializationTemplate), "SerializeData");
             if (target == null)
             {
-                Debug.LogError("[优化存档] 找不到 SerializationTemplate.SerializeData，第二刀未挂载");
+                Debug.LogError("[更好的存档] 找不到 SerializationTemplate.SerializeData，第二刀未挂载");
                 return;
             }
             harmony.Patch(target, prefix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(SerializerPatch), "Prefix")));
-            Debug.Log("[优化存档] SerializationTemplate.SerializeData 已接管（编译委托替代逐字段反射，首轮存档做双路校验）");
+            Debug.Log("[更好的存档] SerializationTemplate.SerializeData 已接管（编译委托替代逐字段反射，首轮存档做双路校验）");
         }
 
         internal static void EndVerify(string reason)
         {
             if (!verify) return;
             verify = false;
-            Debug.Log("[优化存档] 双路校验结束（" + reason + "）：回退路径比对 " + verified + " 次字段读取，不一致 " + mismatches
+            Debug.Log("[更好的存档] 双路校验结束（" + reason + "）：回退路径比对 " + verified + " 次字段读取，不一致 " + mismatches
                 + " 次（快写路径另有 " + FieldPlanner.Checks + " 个字段做过字节级比对，拒绝 " + FieldPlanner.Rejections + " 个）");
         }
 
         public static bool Prefix(KSerialization.SerializationTemplate __instance, object obj, System.IO.BinaryWriter writer)
         {
             calls++;
+            return Body(__instance, obj, writer);
+        }
+
+        private static bool Body(KSerialization.SerializationTemplate __instance, object obj, System.IO.BinaryWriter writer)
+        {
             if (__instance.onSerializing != null) __instance.onSerializing.Invoke(obj, null);
 
             bool check = verify;
@@ -184,7 +189,7 @@ namespace SaveOpt
                 {
                     mismatches++;
                     if (mismatches <= 10)
-                        Debug.LogError("[优化存档] ★字段读取不一致，已改用反射值以保证存档正确: " + f.DeclaringType.Name + "." + f.Name
+                        Debug.LogError("[更好的存档] ★字段读取不一致，已改用反射值以保证存档正确: " + f.DeclaringType.Name + "." + f.Name
                             + " 反射=[" + (expected == null ? "null" : expected.ToString()) + "] 委托=[" + (fromDelegate == null ? "null" : fromDelegate.ToString()) + "]");
                     return expected;
                 }
@@ -192,7 +197,7 @@ namespace SaveOpt
             catch (Exception e)
             {
                 mismatches++;
-                if (mismatches <= 10) Debug.LogError("[优化存档] ★校验异常，已改用反射值: " + f.Name + " : " + e.Message);
+                if (mismatches <= 10) Debug.LogError("[更好的存档] ★校验异常，已改用反射值: " + f.Name + " : " + e.Message);
                 try { return f.GetValue(obj); } catch { }
             }
             return fromDelegate;
@@ -208,21 +213,21 @@ namespace SaveOpt
                 {
                     mismatches++;
                     if (mismatches <= 10)
-                        Debug.LogError("[优化存档] ★属性读取不一致，已改用反射值: " + p.DeclaringType.Name + "." + p.Name);
+                        Debug.LogError("[更好的存档] ★属性读取不一致，已改用反射值: " + p.DeclaringType.Name + "." + p.Name);
                     return expected;
                 }
             }
             catch (Exception e)
             {
                 mismatches++;
-                if (mismatches <= 10) Debug.LogError("[优化存档] ★属性校验异常，已改用反射值: " + p.Name + " : " + e.Message);
+                if (mismatches <= 10) Debug.LogError("[更好的存档] ★属性校验异常，已改用反射值: " + p.Name + " : " + e.Message);
             }
             return fromDelegate;
         }
 
         internal static string Summary()
         {
-            return "[优化存档] 第二刀：SerializeData 调用 " + calls + " 次；委托编译 " + Accessors.Compiled
+            return "[更好的存档] 第二刀：SerializeData 调用 " + calls + " 次；委托编译 " + Accessors.Compiled
                 + " 个，回退反射 " + Accessors.Fallback + " 个；双路比对 " + verified + " 次，不一致 " + mismatches + " 次"
                 + (verify ? "（校验仍在进行）" : "（校验已结束）");
         }

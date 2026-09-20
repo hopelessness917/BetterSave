@@ -13,7 +13,7 @@ namespace SaveOpt
         {
             try
             {
-                Debug.Log("[优化存档] OnLoad 开始");
+                Debug.Log("[更好的存档] OnLoad 开始");
                 Sink.Start();
                 SavePatch.Apply(harmony);
                 SerializerPatch.Apply(harmony);
@@ -25,16 +25,16 @@ namespace SaveOpt
                 if (quit != null)
                 {
                     harmony.Patch(quit, prefix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(ModLoader), "OnApplicationQuit_Prefix")));
-                    Debug.Log("[优化存档] Game.OnApplicationQuit 已挂载（退出前 flush）");
+                    Debug.Log("[更好的存档] Game.OnApplicationQuit 已挂载（退出前 flush）");
                 }
                 else
                 {
-                    Debug.LogWarning("[优化存档] 找不到 Game.OnApplicationQuit，退出前可能丢失未落盘的存档");
+                    Debug.LogWarning("[更好的存档] 找不到 Game.OnApplicationQuit，退出前可能丢失未落盘的存档");
                 }
             }
             catch (Exception e)
             {
-                Debug.LogError("[优化存档] OnLoad 失败: " + e);
+                Debug.LogError("[更好的存档] OnLoad 失败: " + e);
             }
         }
 

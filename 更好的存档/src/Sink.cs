@@ -127,13 +127,13 @@ namespace SaveOpt
                     lastCompressMs = swc.Elapsed.TotalMilliseconds;
                     lastWriteMs = sww.Elapsed.TotalMilliseconds;
                 }
-                Debug.Log("[优化存档] 后台完成：压缩 " + ((long)lastCompressMs) + " ms + 写盘 " + ((long)lastWriteMs)
+                Debug.Log("[更好的存档] 后台完成：压缩 " + ((long)lastCompressMs) + " ms + 写盘 " + ((long)lastWriteMs)
                     + " ms，输出 " + (outBytes / 1048576.0).ToString("F1") + " MB 累计 -> " + Path.GetFileName(job.Path));
             }
             catch (Exception e)
             {
                 lastError = e.GetType().Name + " " + e.Message;
-                Debug.LogError("[优化存档] 后台写盘失败于步骤[" + step + "]: " + job.Path + " : " + lastError);
+                Debug.LogError("[更好的存档] 后台写盘失败于步骤[" + step + "]: " + job.Path + " : " + lastError);
             }
             finally
             {
@@ -144,9 +144,9 @@ namespace SaveOpt
         internal static void Flush(int timeoutMs)
         {
             if (worker == null || !Busy) return;
-            Debug.Log("[优化存档] 退出前等待后台写盘完成…");
+            Debug.Log("[更好的存档] 退出前等待后台写盘完成…");
             Idle.WaitOne(timeoutMs);
-            if (Busy) Debug.LogWarning("[优化存档] 后台写盘超时未完成");
+            if (Busy) Debug.LogWarning("[更好的存档] 后台写盘超时未完成");
         }
 
         internal static void Stop()

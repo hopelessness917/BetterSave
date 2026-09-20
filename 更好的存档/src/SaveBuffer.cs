@@ -60,7 +60,7 @@ namespace SaveOpt
                 if ((long)written * 10 > (long)slot.Length * 9)
                 {
                     warned = true;
-                    Debug.LogWarning("[优化存档] 存档缓冲池余量偏低：本次写入 " + (written / 1048576)
+                    Debug.LogWarning("[更好的存档] 存档缓冲池余量偏低：本次写入 " + (written / 1048576)
                         + " MB / 池 " + (slot.Length / 1048576) + " MB，下次会自动扩大");
                 }
             }
@@ -82,7 +82,7 @@ namespace SaveOpt
             {
                 if (slot != null) mb = slot.Length / 1048576;
             }
-            return "[优化存档] 存档缓冲池：复用 " + reuses + " 次，分配 " + allocations
+            return "[更好的存档] 存档缓冲池：复用 " + reuses + " 次，分配 " + allocations
                 + " 次，退化为一次性分配 " + fallbacks + " 次，当前池 " + mb + " MB";
         }
 

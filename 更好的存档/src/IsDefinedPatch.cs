@@ -15,7 +15,7 @@ namespace SaveOpt
 
         internal static string Summary()
         {
-            return "[优化存档] IsDefined 缓存：命中 " + hits + " 次，未命中 " + misses
+            return "[更好的存档] IsDefined 缓存：命中 " + hits + " 次，未命中 " + misses
                 + " 次（合计 " + (hits + misses) + " 次调用），直通 " + passthrough
                 + " 次，缓存类型 " + Cache.Count + " 个";
         }
@@ -61,11 +61,11 @@ namespace SaveOpt
             MethodInfo target = AccessTools.Method(typeof(SaveLoadRoot), "SaveWithoutTransform");
             if (target == null)
             {
-                Debug.LogError("[优化存档] 找不到 SaveLoadRoot.SaveWithoutTransform，第三刀未挂载");
+                Debug.LogError("[更好的存档] 找不到 SaveLoadRoot.SaveWithoutTransform，第三刀未挂载");
                 return;
             }
             harmony.Patch(target, transpiler: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(IsDefinedPatch), "Transpile")));
-            Debug.Log("[优化存档] SaveLoadRoot.SaveWithoutTransform 已挂载（IsDefined 类型缓存）");
+            Debug.Log("[更好的存档] SaveLoadRoot.SaveWithoutTransform 已挂载（IsDefined 类型缓存）");
         }
 
         public static IEnumerable<CodeInstruction> Transpile(IEnumerable<CodeInstruction> instructions)
@@ -73,7 +73,7 @@ namespace SaveOpt
             MethodInfo replacement = AccessTools.Method(typeof(IsDefinedCache), "Check");
             if (replacement == null)
             {
-                Debug.LogError("[优化存档] IsDefinedCache.Check 解析失败，放弃第三刀");
+                Debug.LogError("[更好的存档] IsDefinedCache.Check 解析失败，放弃第三刀");
                 return instructions;
             }
 
@@ -102,15 +102,15 @@ namespace SaveOpt
                 foreach (ExceptionBlock eb in ins.blocks) rep.blocks.Add(eb);
                 list[i] = rep;
                 swapped++;
-                Debug.Log("[优化存档] IsDefined 替换点 @" + i + "：" + m.DeclaringType.Name + "::IsDefined(Type, bool)");
+                Debug.Log("[更好的存档] IsDefined 替换点 @" + i + "：" + m.DeclaringType.Name + "::IsDefined(Type, bool)");
             }
 
             if (swapped == 0)
             {
-                Debug.LogError("[优化存档] 未找到 IsDefined 调用点，放弃第三刀（游戏可运行）");
+                Debug.LogError("[更好的存档] 未找到 IsDefined 调用点，放弃第三刀（游戏可运行）");
                 return instructions;
             }
-            Debug.Log("[优化存档] IsDefined 替换 " + swapped + " 处，跳过 " + skipped + " 处（同栈效果：3 弹 1 压）");
+            Debug.Log("[更好的存档] IsDefined 替换 " + swapped + " 处，跳过 " + skipped + " 处（同栈效果：3 弹 1 压）");
             return list;
         }
     }

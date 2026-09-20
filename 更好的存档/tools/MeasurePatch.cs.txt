@@ -32,9 +32,9 @@ namespace SaveOpt
         {
             if (Order.Count == 0)
             {
-                return "[优化存档] 【诊断】项目计时: 无数据";
+                return "[更好的存档] 【诊断】项目计时: 无数据";
             }
-            var sb = new System.Text.StringBuilder("[优化存档] 【诊断】项目计时: ");
+            var sb = new System.Text.StringBuilder("[更好的存档] 【诊断】项目计时: ");
             for (int i = 0; i < Order.Count; i++)
             {
                 if (i > 0) sb.Append(" ｜ ");
@@ -89,10 +89,10 @@ namespace SaveOpt
 
         internal static string AllocSummary()
         {
-            if (OuterStart == 0) return "[优化存档] 【诊断】分配: 无数据";
+            if (OuterStart == 0) return "[更好的存档] 【诊断】分配: 无数据";
             long now = Allocated;
-            if (A0 == 0) return "[优化存档] 【诊断】分配: 计量不可用";
-            return "[优化存档] 【诊断】分配(MB): 序列化前 " + Mb(A1 - A0)
+            if (A0 == 0) return "[更好的存档] 【诊断】分配: 计量不可用";
+            return "[更好的存档] 【诊断】分配(MB): 序列化前 " + Mb(A1 - A0)
                 + " ｜ 序列化 " + Mb(A2 - A1)
                 + " ｜ 序列化后 " + Mb(now - A2)
                 + " ｜ 本次 Save 合计 " + Mb(now - A0);
@@ -105,10 +105,10 @@ namespace SaveOpt
 
         internal static string GcSummary()
         {
-            if (OuterStart == 0) return "[优化存档] 【诊断】GC: 无数据";
+            if (OuterStart == 0) return "[更好的存档] 【诊断】GC: 无数据";
             long now = GC.GetTotalMemory(false);
             long delta = now - MemBefore;
-            return "[优化存档] 【诊断】GC: 第0代 +" + (GC.CollectionCount(0) - C0)
+            return "[更好的存档] 【诊断】GC: 第0代 +" + (GC.CollectionCount(0) - C0)
                 + " 次，第1代 +" + (GC.CollectionCount(1) - C1)
                 + " 次，第2代 +" + (GC.CollectionCount(2) - C2)
                 + " 次 ｜ 托管堆 " + (MemBefore / 1048576) + " MB -> " + (now / 1048576)
@@ -137,17 +137,17 @@ namespace SaveOpt
         {
             if (OuterStart == 0)
             {
-                return "[优化存档] 【诊断】阶段切分: 无数据";
+                return "[更好的存档] 【诊断】阶段切分: 无数据";
             }
             long now = Stopwatch.GetTimestamp();
             if (InnerStart == 0 || InnerEnd == 0)
             {
-                return "[优化存档] 【诊断】阶段切分: 未捕获到 Save(BinaryWriter)，整个 Save " + Span(OuterStart, now).ToString("F1") + " ms";
+                return "[更好的存档] 【诊断】阶段切分: 未捕获到 Save(BinaryWriter)，整个 Save " + Span(OuterStart, now).ToString("F1") + " ms";
             }
             double pre = Span(OuterStart, InnerStart);
             double ser = Span(InnerStart, InnerEnd);
             double post = Span(InnerEnd, now);
-            return "[优化存档] 【诊断】阶段切分: 序列化前 " + pre.ToString("F1") + " ms ｜ Save(BinaryWriter) " + ser.ToString("F1")
+            return "[更好的存档] 【诊断】阶段切分: 序列化前 " + pre.ToString("F1") + " ms ｜ Save(BinaryWriter) " + ser.ToString("F1")
                 + " ms ｜ 序列化后 " + post.ToString("F1") + " ms ｜ 合计 " + (pre + ser + post).ToString("F1") + " ms";
         }
 
@@ -284,7 +284,7 @@ namespace SaveOpt
             string name = holder.Name;
             if (target == null)
             {
-                Debug.LogWarning("[优化存档] 【诊断】找不到目标方法，跳过: " + name);
+                Debug.LogWarning("[更好的存档] 【诊断】找不到目标方法，跳过: " + name);
                 return;
             }
             try
@@ -292,11 +292,11 @@ namespace SaveOpt
                 harmony.Patch(target,
                     prefix: new HarmonyLib.HarmonyMethod(holder.GetMethod("Prefix", BindingFlags.Public | BindingFlags.Static)),
                     postfix: new HarmonyLib.HarmonyMethod(holder.GetMethod("Postfix", BindingFlags.Public | BindingFlags.Static)));
-                Debug.Log("[优化存档] 【诊断】已挂载计时: " + name + "  ->  " + target.DeclaringType.Name + "::" + target.Name);
+                Debug.Log("[更好的存档] 【诊断】已挂载计时: " + name + "  ->  " + target.DeclaringType.Name + "::" + target.Name);
             }
             catch (Exception e)
             {
-                Debug.LogError("[优化存档] 【诊断】挂载失败 " + name + ": " + e.Message);
+                Debug.LogError("[更好的存档] 【诊断】挂载失败 " + name + ": " + e.Message);
             }
         }
     }
