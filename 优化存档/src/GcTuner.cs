@@ -213,6 +213,9 @@ namespace SaveOpt
             c1 = GC.CollectionCount(1);
             c2 = GC.CollectionCount(2);
             heapBefore = SafeHeap();
+            wallStart = Time.realtimeSinceStartup;
+            try { cpuStart = Process.GetCurrentProcess().TotalProcessorTime; }
+            catch (Exception) { cpuStart = TimeSpan.MinValue; }
             savesSeen++;
             if (savesSeen == 1)
             {
@@ -221,6 +224,8 @@ namespace SaveOpt
             }
         }
 
+        private static double wallStart;
+        private static TimeSpan cpuStart;
         private static long savesSeen;
         private static long opportunities;
         private static long blockedShort;
@@ -234,11 +239,24 @@ namespace SaveOpt
         {
             long after = SafeHeap();
             long debt = after - baseline;
+            string cores = "?";
+            double wall = (Time.realtimeSinceStartup - wallStart) * 1000.0;
+            if (cpuStart != TimeSpan.MinValue)
+            {
+                try
+                {
+                    double cpuMs = (Process.GetCurrentProcess().TotalProcessorTime - cpuStart).TotalMilliseconds;
+                    cores = cpuMs.ToString("F0") + " ms / 平均 "
+                        + (cpuMs / (wall > 1.0 ? wall : 1.0)).ToString("F2") + " 核";
+                }
+                catch (Exception) { }
+            }
             return "[优化存档] 本轮存档期间 GC: 第0代 +" + (GC.CollectionCount(0) - c0)
                 + "，第1代 +" + (GC.CollectionCount(1) - c1)
                 + "，第2代 +" + (GC.CollectionCount(2) - c2)
                 + " ｜ 堆 " + (heapBefore / 1048576) + " -> " + (after / 1048576)
-                + " MB（相对上次回收 +" + (debt / 1048576) + " MB）";
+                + " MB（相对上次回收 +" + (debt / 1048576) + " MB）"
+                + " ｜ CPU " + cores + "（墙钟 " + wall.ToString("F0") + " ms）";
         }
 
         internal static string Summary()
