@@ -16,6 +16,7 @@ namespace SaveOpt
                 Debug.Log("[优化存档] OnLoad 开始");
                 Sink.Start();
                 SavePatch.Apply(harmony);
+                SerializerPatch.Apply(harmony);
 
                 MethodInfo quit = AccessTools.Method(typeof(Game), "OnApplicationQuit");
                 if (quit != null)
@@ -39,6 +40,7 @@ namespace SaveOpt
             Sink.Flush(15000);
             Sink.Stop();
             Debug.Log(SavePatch.Summary());
+            Debug.Log(SerializerPatch.Summary());
         }
     }
 }

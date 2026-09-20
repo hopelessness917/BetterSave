@@ -98,6 +98,7 @@
   <ItemGroup>
     <Compile Include="src\ModLoader.cs" />
     <Compile Include="src\SavePatch.cs" />
+    <Compile Include="src\SerializerPatch.cs" />
     <Compile Include="src\Sink.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
