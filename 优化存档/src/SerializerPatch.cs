@@ -104,7 +104,8 @@ namespace SaveOpt
         {
             if (!verify) return;
             verify = false;
-            Debug.Log("[优化存档] 双路校验结束（" + reason + "）：比对 " + verified + " 次字段读取，不一致 " + mismatches + " 次");
+            Debug.Log("[优化存档] 双路校验结束（" + reason + "）：回退路径比对 " + verified + " 次字段读取，不一致 " + mismatches
+                + " 次（快写路径另有 " + FieldPlanner.Checks + " 个字段做过字节级比对，拒绝 " + FieldPlanner.Rejections + " 个）");
         }
 
         public static bool Prefix(KSerialization.SerializationTemplate __instance, object obj, System.IO.BinaryWriter writer)
@@ -119,11 +120,23 @@ namespace SaveOpt
                 for (int i = 0; i < fields.Count; i++)
                 {
                     KSerialization.SerializationTemplate.SerializationField sf = fields[i];
+                    FieldPlan plan = FieldPlanner.For(sf.field, sf.typeInfo);
                     try
                     {
-                        object value = Accessors.For(sf.field)(obj);
+                        if (plan.Fast != null)
+                        {
+                            if (!plan.Checked) FieldPlanner.Check(plan, obj, sf.typeInfo);
+                            if (plan.Trusted)
+                            {
+                                plan.Fast(obj, writer);
+                                FieldPlanner.NoteFast(plan.Code);
+                                continue;
+                            }
+                        }
+                        object value = plan.Getter(obj);
                         if (check) value = VerifyField(sf.field, obj, value);
                         KSerialization.Helper.WriteValue(writer, sf.typeInfo, value);
+                        FieldPlanner.NoteSlow(plan.Code);
                     }
                     catch (Exception inner)
                     {
@@ -145,6 +158,7 @@ namespace SaveOpt
                         object value2 = Accessors.For(sp.property)(obj);
                         if (check) value2 = VerifyProperty(sp.property, obj, value2);
                         KSerialization.Helper.WriteValue(writer, sp.typeInfo, value2);
+                        FieldPlanner.NoteProperty();
                     }
                     catch (Exception inner2)
                     {
