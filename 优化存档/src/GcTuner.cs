@@ -14,6 +14,8 @@ namespace SaveOpt
         private const int CheckEveryFrames = 15;
         private const double MinIntervalSeconds = 90.0;
 
+        private static readonly bool InterventionEnabled = false;
+
         private static bool incremental;
         private static bool driving;
         private static bool opportunistic = true;
@@ -54,6 +56,15 @@ namespace SaveOpt
             Debug.Log("[优化存档] GC 环境: " + env);
 
             ResolveApis();
+
+            if (!InterventionEnabled)
+            {
+                opportunistic = false;
+                Debug.Log("[优化存档] 自动干预已停用（第七刀实测无收益：23 分钟内执行 2 次，"
+                    + "阻止存档 GC 0 次、却让总回收次数从 9 增到 11）。"
+                    + "仍保留每轮存档的 GC / 堆 / CPU 监控");
+                return;
+            }
 
             try
             {
@@ -261,6 +272,11 @@ namespace SaveOpt
 
         internal static string Summary()
         {
+            if (!InterventionEnabled)
+            {
+                return "[优化存档] 监控已结束：自动干预停用 ｜ GC 环境: " + env;
+            }
+
             var sb = new System.Text.StringBuilder("[优化存档] ");
             sb.Append(incremental
                 ? ("第六刀（增量 GC 驱动）：时间片 " + slices + " 次，完成整轮 " + completed + " 次")
