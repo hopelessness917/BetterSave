@@ -1,0 +1,303 @@
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Reflection;
+using HarmonyLib;
+
+namespace SaveOpt
+{
+    internal static class Measure
+    {
+        private static readonly Dictionary<string, double> Ms = new Dictionary<string, double>();
+        private static readonly List<string> Order = new List<string>();
+
+        internal static void Add(string key, double ms)
+        {
+            if (!Ms.ContainsKey(key))
+            {
+                Ms[key] = 0.0;
+                Order.Add(key);
+            }
+            Ms[key] += ms;
+        }
+
+        internal static void Reset()
+        {
+            Ms.Clear();
+            Order.Clear();
+        }
+
+        internal static string Summary()
+        {
+            if (Order.Count == 0)
+            {
+                return "[优化存档] 【诊断】项目计时: 无数据";
+            }
+            var sb = new System.Text.StringBuilder("[优化存档] 【诊断】项目计时: ");
+            for (int i = 0; i < Order.Count; i++)
+            {
+                if (i > 0) sb.Append(" ｜ ");
+                sb.Append(Order[i]).Append(' ').Append(Ms[Order[i]].ToString("F1")).Append(" ms");
+            }
+            return sb.ToString();
+        }
+
+        internal static double Elapsed(long start)
+        {
+            long now = Stopwatch.GetTimestamp();
+            return (now - start) * 1000.0 / Stopwatch.Frequency;
+        }
+    }
+
+    internal static class Phase
+    {
+        internal static long OuterStart;
+        internal static long InnerStart;
+        internal static long InnerEnd;
+        internal static int C0;
+        internal static int C1;
+        internal static int C2;
+        internal static long MemBefore;
+        internal static long A0;
+        internal static long A1;
+        internal static long A2;
+
+        internal static long Allocated
+        {
+            get
+            {
+                try { return AppDomain.CurrentDomain.MonitoringTotalAllocatedMemorySize; }
+                catch (Exception) { return 0; }
+            }
+        }
+
+        internal static void BeginOuter()
+        {
+            Measure.Reset();
+            OuterStart = Stopwatch.GetTimestamp();
+            InnerStart = 0;
+            InnerEnd = 0;
+            C0 = GC.CollectionCount(0);
+            C1 = GC.CollectionCount(1);
+            C2 = GC.CollectionCount(2);
+            MemBefore = GC.GetTotalMemory(false);
+            A0 = Allocated;
+            A1 = 0;
+            A2 = 0;
+        }
+
+        internal static string AllocSummary()
+        {
+            if (OuterStart == 0) return "[优化存档] 【诊断】分配: 无数据";
+            long now = Allocated;
+            if (A0 == 0) return "[优化存档] 【诊断】分配: 计量不可用";
+            return "[优化存档] 【诊断】分配(MB): 序列化前 " + Mb(A1 - A0)
+                + " ｜ 序列化 " + Mb(A2 - A1)
+                + " ｜ 序列化后 " + Mb(now - A2)
+                + " ｜ 本次 Save 合计 " + Mb(now - A0);
+        }
+
+        private static string Mb(long bytes)
+        {
+            return (bytes / 1048576.0).ToString("F1");
+        }
+
+        internal static string GcSummary()
+        {
+            if (OuterStart == 0) return "[优化存档] 【诊断】GC: 无数据";
+            long now = GC.GetTotalMemory(false);
+            long delta = now - MemBefore;
+            return "[优化存档] 【诊断】GC: 第0代 +" + (GC.CollectionCount(0) - C0)
+                + " 次，第1代 +" + (GC.CollectionCount(1) - C1)
+                + " 次，第2代 +" + (GC.CollectionCount(2) - C2)
+                + " 次 ｜ 托管堆 " + (MemBefore / 1048576) + " MB -> " + (now / 1048576)
+                + " MB（" + (delta >= 0 ? "+" : "") + (delta / 1048576) + " MB）";
+        }
+
+        internal static void BeginInner()
+        {
+            if (OuterStart != 0)
+            {
+                InnerStart = Stopwatch.GetTimestamp();
+                A1 = Allocated;
+            }
+        }
+
+        internal static void EndInner()
+        {
+            if (InnerStart != 0)
+            {
+                InnerEnd = Stopwatch.GetTimestamp();
+                A2 = Allocated;
+            }
+        }
+
+        internal static string Summary()
+        {
+            if (OuterStart == 0)
+            {
+                return "[优化存档] 【诊断】阶段切分: 无数据";
+            }
+            long now = Stopwatch.GetTimestamp();
+            if (InnerStart == 0 || InnerEnd == 0)
+            {
+                return "[优化存档] 【诊断】阶段切分: 未捕获到 Save(BinaryWriter)，整个 Save " + Span(OuterStart, now).ToString("F1") + " ms";
+            }
+            double pre = Span(OuterStart, InnerStart);
+            double ser = Span(InnerStart, InnerEnd);
+            double post = Span(InnerEnd, now);
+            return "[优化存档] 【诊断】阶段切分: 序列化前 " + pre.ToString("F1") + " ms ｜ Save(BinaryWriter) " + ser.ToString("F1")
+                + " ms ｜ 序列化后 " + post.ToString("F1") + " ms ｜ 合计 " + (pre + ser + post).ToString("F1") + " ms";
+        }
+
+        private static double Span(long a, long b)
+        {
+            return (b - a) * 1000.0 / Stopwatch.Frequency;
+        }
+    }
+
+    internal static class PhaseOuter
+    {
+        public static void Prefix()
+        {
+            Phase.BeginOuter();
+        }
+
+        public static void Postfix()
+        {
+            Debug.Log(Phase.Summary());
+            Debug.Log(Phase.GcSummary());
+            Debug.Log(Phase.AllocSummary());
+            Debug.Log(Measure.Summary());
+            Phase.OuterStart = 0;
+        }
+    }
+
+    internal static class PhaseInner
+    {
+        public static void Prefix()
+        {
+            Phase.BeginInner();
+        }
+
+        public static void Postfix()
+        {
+            Phase.EndInner();
+        }
+    }
+
+    internal static class MeasureSummaryData
+    {
+        internal const string Key = "③ SaveColonySummaryData(全)";
+
+        public static void Prefix(out long __state)
+        {
+            __state = Stopwatch.GetTimestamp();
+        }
+
+        public static void Postfix(long __state)
+        {
+            Measure.Add(Key, Measure.Elapsed(__state));
+        }
+    }
+
+    internal static class MeasureGatherData
+    {
+        internal const string Key = "③a └GetCurrentColonyRetiredColonyData";
+
+        public static void Prefix(out long __state)
+        {
+            __state = Stopwatch.GetTimestamp();
+        }
+
+        public static void Postfix(long __state)
+        {
+            Measure.Add(Key, Measure.Elapsed(__state));
+        }
+    }
+
+    internal static class MeasureReportMetrics
+    {
+        internal const string Key = "② ReportSaveMetrics";
+
+        public static void Prefix(out long __state)
+        {
+            __state = Stopwatch.GetTimestamp();
+        }
+
+        public static void Postfix(long __state)
+        {
+            Measure.Add(Key, Measure.Elapsed(__state));
+        }
+    }
+
+    internal static class MeasureBigMemoryStream
+    {
+        internal const string Key = "⑤ new MemoryStream(>=20MB)";
+        private const int Threshold = 20 * 1024 * 1024;
+
+        public static void Prefix(int __0, out long __state)
+        {
+            __state = __0 >= Threshold ? Stopwatch.GetTimestamp() : 0L;
+        }
+
+        public static void Postfix(long __state)
+        {
+            if (__state != 0)
+            {
+                Measure.Add(Key, Measure.Elapsed(__state));
+            }
+        }
+    }
+
+    internal static class MeasureRent
+    {
+        internal const string Key = "④ SaveBuffer.Rent(池)";
+
+        public static void Prefix(out long __state)
+        {
+            __state = Stopwatch.GetTimestamp();
+        }
+
+        public static void Postfix(long __state)
+        {
+            Measure.Add(Key, Measure.Elapsed(__state));
+        }
+    }
+
+    internal static class MeasurePatch
+    {
+        internal static void Apply(HarmonyLib.Harmony harmony)
+        {
+            Hook(harmony, AccessTools.Method(typeof(SaveLoader), "Save", new[] { typeof(string), typeof(bool), typeof(bool) }), typeof(PhaseOuter));
+            Hook(harmony, AccessTools.Method(typeof(SaveLoader), "Save", new[] { typeof(BinaryWriter) }), typeof(PhaseInner));
+            Hook(harmony, AccessTools.Method(typeof(SaveBuffer), "Rent"), typeof(MeasureRent));
+            Hook(harmony, AccessTools.Method(typeof(RetireColonyUtility), "SaveColonySummaryData"), typeof(MeasureSummaryData));
+            Hook(harmony, AccessTools.Method(typeof(RetireColonyUtility), "GetCurrentColonyRetiredColonyData"), typeof(MeasureGatherData));
+            Hook(harmony, AccessTools.Method(typeof(SaveLoader), "ReportSaveMetrics", new[] { typeof(bool) }), typeof(MeasureReportMetrics));
+            Hook(harmony, AccessTools.Constructor(typeof(MemoryStream), new[] { typeof(int) }), typeof(MeasureBigMemoryStream));
+        }
+
+        private static void Hook(HarmonyLib.Harmony harmony, MethodBase target, Type holder)
+        {
+            string name = holder.Name;
+            if (target == null)
+            {
+                Debug.LogWarning("[优化存档] 【诊断】找不到目标方法，跳过: " + name);
+                return;
+            }
+            try
+            {
+                harmony.Patch(target,
+                    prefix: new HarmonyLib.HarmonyMethod(holder.GetMethod("Prefix", BindingFlags.Public | BindingFlags.Static)),
+                    postfix: new HarmonyLib.HarmonyMethod(holder.GetMethod("Postfix", BindingFlags.Public | BindingFlags.Static)));
+                Debug.Log("[优化存档] 【诊断】已挂载计时: " + name + "  ->  " + target.DeclaringType.Name + "::" + target.Name);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError("[优化存档] 【诊断】挂载失败 " + name + ": " + e.Message);
+            }
+        }
+    }
+}

@@ -57,8 +57,8 @@ namespace SaveOpt
             {
                 if (graphStream == null) return;
                 sourceLen = (int)graphStream.Length;
-                source = new byte[sourceLen];
-                Buffer.BlockCopy(graphStream.GetBuffer(), 0, source, 0, sourceLen);
+                source = graphStream.GetBuffer();
+                SaveBuffer.CheckUsage(sourceLen);
             }
             catch (Exception e)
             {
@@ -124,6 +124,7 @@ namespace SaveOpt
         {
             pendingPath = filename;
             Capture.Reset();
+            SaveBuffer.ReleaseStale();
             inSave = true;
             SaveWatch.Start = Now();
             Debug.Log("[优化存档] 存档开始 " + (isAutoSave ? "自动" : "手动") + " -> " + Path.GetFileName(filename));
@@ -150,7 +151,7 @@ namespace SaveOpt
             }
 
             if (SerializerPatch.VerifyMode) SerializerPatch.EndVerify("首次存档完成");
-            Sink.Enqueue(head, src, srcLen, path);
+            if (!Sink.Enqueue(head, src, srcLen, path)) SaveBuffer.Release(src);
             Debug.Log("[优化存档] 主线程移交后台：头部 " + ((head == null ? 0 : head.Length) / 1024) + " KB + 未压缩 "
                 + (srcLen / 1048576.0).ToString("F1") + " MB；主线程存档耗时 " + total.ToString("F0") + " ms");
             Debug.Log(IsDefinedCache.Summary());
@@ -190,6 +191,12 @@ namespace SaveOpt
         {
             ConstructorInfo emptyMs = AccessTools.Constructor(typeof(MemoryStream), Type.EmptyTypes);
             ConstructorInfo capMs = AccessTools.Constructor(typeof(MemoryStream), new[] { typeof(int) });
+            MethodInfo rent = AccessTools.Method(typeof(SaveBuffer), "Rent");
+            if (rent == null)
+            {
+                Debug.LogError("[优化存档] 找不到 SaveBuffer.Rent，放弃整批补丁以保证游戏可运行");
+                return instructions;
+            }
             ConstructorInfo bwCtor = AccessTools.Constructor(typeof(BinaryWriter), new[] { typeof(Stream) });
             MethodInfo noteGraph = AccessTools.Method(typeof(Capture), "NoteGraphStream");
             MethodInfo noteOutput = AccessTools.Method(typeof(Capture), "NoteOutput");
@@ -207,6 +214,10 @@ namespace SaveOpt
                 {
                     if (i + 1 < list.Count && list[i + 1].opcode == OpCodes.Stloc_S)
                     {
+                        var rentCall = new CodeInstruction(OpCodes.Call, rent);
+                        foreach (Label lb in ins.labels) rentCall.labels.Add(lb);
+                        foreach (ExceptionBlock eb in ins.blocks) rentCall.blocks.Add(eb);
+                        list[i] = rentCall;
                         list.Insert(i + 2, new CodeInstruction(OpCodes.Call, noteGraph));
                         var ld = new CodeInstruction(OpCodes.Ldloc_S, (LocalBuilder)null);
                         ld.operand = list[i + 1].operand;
@@ -269,7 +280,7 @@ namespace SaveOpt
                 return instructions;
             }
 
-            if (!ShapeOk(list, capMs, bwCtor, noteGraph, noteOutput))
+            if (!ShapeOk(list, rent, bwCtor, noteGraph, noteOutput))
             {
                 Debug.LogError("[优化存档] 结构性校验失败，放弃整批补丁");
                 return instructions;
@@ -294,7 +305,7 @@ namespace SaveOpt
             return capIdx >= 0 && graphCall == capIdx + 3;
         }
 
-        private static bool ShapeOk(List<CodeInstruction> list, ConstructorInfo capMs, ConstructorInfo bwCtor,
+        private static bool ShapeOk(List<CodeInstruction> list, MethodInfo rent, ConstructorInfo bwCtor,
             MethodInfo noteGraph, MethodInfo noteOutput)
         {
             int graphCall = -1, outputCall = -1, capIdx = -1, bwAfterSwap = -1, swapIdx = -1;
@@ -303,12 +314,12 @@ namespace SaveOpt
                 CodeInstruction c = list[i];
                 if (c.opcode == OpCodes.Newobj && c.operand is ConstructorInfo ci)
                 {
-                    if (ci == capMs && capIdx < 0) capIdx = i;
                     if (ci.DeclaringType == typeof(MemoryStream) && ci.GetParameters().Length == 0 && swapIdx < 0) swapIdx = i;
                     if (ci == bwCtor && swapIdx >= 0 && i > swapIdx && bwAfterSwap < 0) bwAfterSwap = i;
                 }
                 if (c.opcode == OpCodes.Call && c.operand is MethodInfo m)
                 {
+                    if (m == rent && capIdx < 0) capIdx = i;
                     if (m == noteGraph && graphCall < 0) graphCall = i;
                     if (m == noteOutput && outputCall < 0) outputCall = i;
                 }

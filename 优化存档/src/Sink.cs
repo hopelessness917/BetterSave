@@ -23,6 +23,7 @@ namespace SaveOpt
 
         private static Thread worker;
         private static volatile bool stopping;
+        private static bool working;
         private static long written;
         private static long rawBytes;
         private static long outBytes;
@@ -39,7 +40,7 @@ namespace SaveOpt
 
         internal static bool Busy
         {
-            get { lock (Gate) { return Queue.Count > 0; } }
+            get { lock (Gate) { return Queue.Count > 0 || working; } }
         }
 
         internal static void Start()
@@ -52,15 +53,16 @@ namespace SaveOpt
             worker.Start();
         }
 
-        internal static void Enqueue(byte[] head, byte[] source, int sourceLength, string path)
+        internal static bool Enqueue(byte[] head, byte[] source, int sourceLength, string path)
         {
-            if ((head == null || head.Length == 0) && (source == null || sourceLength <= 0)) return;
+            if ((head == null || head.Length == 0) && (source == null || sourceLength <= 0)) return false;
             lock (Gate)
             {
                 Queue.Enqueue(new WriteJob { Head = head, Source = source, SourceLength = sourceLength, Path = path });
                 Idle.Reset();
             }
             Signal.Set();
+            return true;
         }
 
         private static void Loop()
@@ -75,8 +77,10 @@ namespace SaveOpt
                     {
                         if (Queue.Count == 0) { Idle.Set(); break; }
                         job = Queue.Dequeue();
+                        working = true;
                     }
                     Run(job);
+                    lock (Gate) { working = false; }
                 }
             }
         }
@@ -130,6 +134,10 @@ namespace SaveOpt
             {
                 lastError = e.GetType().Name + " " + e.Message;
                 Debug.LogError("[优化存档] 后台写盘失败于步骤[" + step + "]: " + job.Path + " : " + lastError);
+            }
+            finally
+            {
+                SaveBuffer.Release(job.Source);
             }
         }
 

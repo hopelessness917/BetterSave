@@ -101,6 +101,7 @@
     <Compile Include="src\SerializerPatch.cs" />
     <Compile Include="src\IsDefinedPatch.cs" />
     <Compile Include="src\Sink.cs" />
+    <Compile Include="src\SaveBuffer.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

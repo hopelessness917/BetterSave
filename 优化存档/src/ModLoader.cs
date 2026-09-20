@@ -43,6 +43,7 @@ namespace SaveOpt
             Debug.Log(SavePatch.Summary());
             Debug.Log(SerializerPatch.Summary());
             Debug.Log(IsDefinedCache.Summary());
+            Debug.Log(SaveBuffer.Summary());
         }
     }
 }
