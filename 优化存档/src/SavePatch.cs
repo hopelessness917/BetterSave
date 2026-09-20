@@ -92,6 +92,8 @@ namespace SaveOpt
         private static long saved;
         private static double lastMs;
 
+        internal static bool InSave { get { return inSave; } }
+
         internal static void Apply(HarmonyLib.Harmony harmony)
         {
             MethodInfo save = AccessTools.Method(typeof(SaveLoader), "Save", new[] { typeof(string), typeof(bool), typeof(bool) });
@@ -126,6 +128,7 @@ namespace SaveOpt
             Capture.Reset();
             SaveBuffer.ReleaseStale();
             inSave = true;
+            GcTuner.BeginSave();
             SaveWatch.Start = Now();
             Debug.Log("[优化存档] 存档开始 " + (isAutoSave ? "自动" : "手动") + " -> " + Path.GetFileName(filename));
         }
@@ -155,6 +158,7 @@ namespace SaveOpt
             Debug.Log("[优化存档] 主线程移交后台：头部 " + ((head == null ? 0 : head.Length) / 1024) + " KB + 未压缩 "
                 + (srcLen / 1048576.0).ToString("F1") + " MB；主线程存档耗时 " + total.ToString("F0") + " ms");
             Debug.Log(IsDefinedCache.Summary());
+            Debug.Log(GcTuner.SaveSummary());
         }
 
         public static bool Compress_Prefix()
