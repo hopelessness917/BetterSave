@@ -1,0 +1,8 @@
+bin/
+obj/
+.vs/
+*backup*/
+*.bak
+*.log
+*.pdb
+savverify/
