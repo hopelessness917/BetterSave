@@ -44,6 +44,7 @@ namespace SaveOpt
             Debug.Log(SerializerPatch.Summary());
             Debug.Log(IsDefinedCache.Summary());
             Debug.Log(SaveBuffer.Summary());
+            Debug.Log(FieldPlanner.Summary());
         }
     }
 }
