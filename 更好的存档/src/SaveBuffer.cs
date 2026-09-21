@@ -14,20 +14,19 @@ namespace SaveOpt
         private static long allocations;
         private static long fallbacks;
         private static bool warned;
+        private static int floor;
+        private static long grew;
 
         internal static MemoryStream Rent(int capacity)
         {
             if (capacity < 1) capacity = 1;
             lock (Gate)
             {
-                if (slot == null)
+                int want = (int)(capacity * Margin);
+                if (want < floor) want = floor;
+                if (slot == null || slot.Length < want)
                 {
-                    slot = new byte[(int)(capacity * Margin)];
-                    allocations++;
-                }
-                else if (slot.Length < capacity)
-                {
-                    slot = new byte[(int)(capacity * Margin)];
+                    slot = new byte[want];
                     allocations++;
                 }
 
@@ -35,12 +34,22 @@ namespace SaveOpt
                 {
                     busy = true;
                     reuses++;
-                    return Wrap(slot);
+                    return new PooledStream(slot);
                 }
             }
 
             fallbacks++;
             return new MemoryStream(capacity);
+        }
+
+        internal static void NoteGrowth(int size)
+        {
+            lock (Gate)
+            {
+                if (size <= floor) return;
+                floor = size;
+                grew++;
+            }
         }
 
         internal static void Release(byte[] buffer)
@@ -83,14 +92,7 @@ namespace SaveOpt
                 if (slot != null) mb = slot.Length / 1048576;
             }
             return "[更好的存档] 存档缓冲池：复用 " + reuses + " 次，分配 " + allocations
-                + " 次，退化为一次性分配 " + fallbacks + " 次，当前池 " + mb + " MB";
-        }
-
-        private static MemoryStream Wrap(byte[] buffer)
-        {
-            var ms = new MemoryStream(buffer, 0, buffer.Length, true, true);
-            ms.SetLength(0);
-            return ms;
+                + " 次，退化为一次性分配 " + fallbacks + " 次，自动扩容 " + grew + " 次，当前池 " + mb + " MB";
         }
     }
 }
