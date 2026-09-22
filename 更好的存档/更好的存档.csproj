@@ -106,6 +106,7 @@
     <Compile Include="src\PooledStream.cs" />
     <Compile Include="src\GcTuner.cs" />
     <Compile Include="src\GcModeGate.cs" />
+    <Compile Include="src\FrameWatch.cs" />
     <Compile Include="src\ThumbnailAsync.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>

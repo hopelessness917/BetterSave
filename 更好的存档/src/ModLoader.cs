@@ -20,6 +20,7 @@ namespace SaveOpt
                 IsDefinedPatch.Apply(harmony);
                 GcTuner.Apply(harmony);
                 GcModeGate.Apply(harmony);
+                FrameWatch.Apply(harmony);
                 ThumbnailAsync.Apply(harmony);
 
                 MethodInfo quit = AccessTools.Method(typeof(Game), "OnApplicationQuit");
@@ -52,6 +53,7 @@ namespace SaveOpt
             Debug.Log(FieldPlanner.Summary());
             Debug.Log(GcTuner.Summary());
             Debug.Log(GcModeGate.Summary());
+            Debug.Log(FrameWatch.Summary());
             Debug.Log(ThumbnailAsync.Summary());
         }
     }

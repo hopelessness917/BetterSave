@@ -1,0 +1,185 @@
+using System;
+using System.Reflection;
+using HarmonyLib;
+using UnityEngine;
+
+namespace SaveOpt
+{
+    internal static class FrameWatch
+    {
+        private const double Window = 10.0;
+        private const double ThresholdMs = 100.0;
+        private const int MaxRecords = 24;
+
+        private static double lastFrame;
+        private static bool tracking;
+        private static double startAt;
+        private static long windowFrames;
+        private static long totalFrames;
+        private static double saveMs;
+        private static int count;
+        private static double gapTotal;
+        private static double gapMax;
+        private static readonly double[] gapMs = new double[MaxRecords];
+        private static readonly double[] gapAt = new double[MaxRecords];
+        private static double previewStart;
+        private static PropertyInfo captureProp;
+        private static bool capturing;
+        private static double captureAt;
+        private static long captureCount;
+        private static double captureTotal;
+        private static double captureMax;
+
+        internal static void Apply(HarmonyLib.Harmony harmony)
+        {
+            try
+            {
+                Type appType = AccessTools.TypeByName("App");
+                MethodInfo late = appType == null ? null : AccessTools.Method(appType, "LateUpdate");
+                if (late == null)
+                {
+                    Debug.LogWarning("[更好的存档] 找不到 App.LateUpdate，体感窗口无法测量");
+                }
+                else
+                {
+                    harmony.Patch(late, postfix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(FrameWatch), "Tick")));
+                    lastFrame = Time.realtimeSinceStartup;
+                    Debug.Log("[更好的存档] 体感窗口测量已挂载（逐帧记录存档开始后 " + (int)Window + " s 内 ≥"
+                        + (int)ThresholdMs + " ms 的卡顿）");
+                }
+
+                Type tl = AccessTools.TypeByName("Timelapser");
+                MethodInfo rap = tl == null ? null : AccessTools.Method(tl, "RenderAndPrint");
+                if (rap != null)
+                {
+                    harmony.Patch(rap,
+                        prefix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(FrameWatch), "Preview_Prefix")),
+                        postfix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(FrameWatch), "Preview_Postfix")));
+                    Debug.Log("[更好的存档] 预览图生成计时已挂载（Timelapser.RenderAndPrint）");
+                }
+                else
+                {
+                    Debug.LogWarning("[更好的存档] 找不到 Timelapser.RenderAndPrint，预览图计时段缺失");
+                }
+
+                if (tl != null)
+                {
+                    captureProp = AccessTools.Property(tl, "CapturingTimelapseScreenshot");
+                    if (captureProp != null)
+                    {
+                        Debug.Log("[更好的存档] 预览捕获状态监测已挂载（该状态为真时 CameraController 不处理输入）");
+                    }
+                    else
+                    {
+                        Debug.LogWarning("[更好的存档] 找不到 Timelapser.CapturingTimelapseScreenshot，操作封锁时长度无法测量");
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning("[更好的存档] 体感窗口测量挂载失败: " + e.Message);
+            }
+        }
+
+        public static void Tick()
+        {
+            double now = Time.realtimeSinceStartup;
+            double gap = now - lastFrame;
+            lastFrame = now;
+            totalFrames++;
+
+            if (captureProp != null)
+            {
+                bool nowCapturing;
+                try { nowCapturing = (bool)captureProp.GetValue(null, null); }
+                catch (Exception) { captureProp = null; nowCapturing = false; }
+
+                if (nowCapturing && !capturing)
+                {
+                    capturing = true;
+                    captureAt = now;
+                }
+                else if (!nowCapturing && capturing)
+                {
+                    capturing = false;
+                    double d = (now - captureAt) * 1000.0;
+                    captureCount++;
+                    captureTotal += d;
+                    if (d > captureMax) captureMax = d;
+                    Debug.Log("[更好的存档] 预览捕获窗口结束：持续 " + d.ToString("F0")
+                        + " ms（该期间 CameraController 不处理输入）");
+                }
+            }
+
+            if (!tracking) return;
+
+            windowFrames++;
+            if (gap * 1000.0 >= ThresholdMs)
+            {
+                if (count < MaxRecords)
+                {
+                    gapMs[count] = gap * 1000.0;
+                    gapAt[count] = now - startAt;
+                    count++;
+                }
+                gapTotal += gap * 1000.0;
+                if (gap * 1000.0 > gapMax) gapMax = gap * 1000.0;
+            }
+
+            if (now - startAt >= Window)
+            {
+                tracking = false;
+                LogSummary();
+            }
+        }
+
+        internal static void Begin()
+        {
+            tracking = true;
+            startAt = Time.realtimeSinceStartup;
+            windowFrames = 0;
+            count = 0;
+            gapTotal = 0;
+            gapMax = 0;
+            saveMs = 0;
+        }
+
+        internal static void Mark(double mainMs)
+        {
+            saveMs = mainMs;
+        }
+
+        public static void Preview_Prefix()
+        {
+            previewStart = Time.realtimeSinceStartup;
+        }
+
+        public static void Preview_Postfix()
+        {
+            Debug.Log("[更好的存档] 预览图生成（主线程，落在存档计时窗口之外）："
+                + ((Time.realtimeSinceStartup - previewStart) * 1000.0).ToString("F0") + " ms");
+        }
+
+        private static void LogSummary()
+        {
+            string detail = "";
+            for (int i = 0; i < count; i++)
+            {
+                detail += (i > 0 ? "、" : "") + gapMs[i].ToString("F0") + " ms@" + gapAt[i].ToString("F1") + " s";
+            }
+            if (detail.Length == 0) detail = "无";
+
+            Debug.Log("[更好的存档] 体感窗口：自存档开始 " + (int)Window + " s 内逐帧 " + windowFrames
+                + " 帧（累计 " + totalFrames + "）｜ 主线程存档窗口 " + saveMs.ToString("F0")
+                + " ms ｜ ≥" + (int)ThresholdMs + " ms 的卡顿 " + count + " 段，合计 "
+                + gapTotal.ToString("F0") + " ms，最长 " + gapMax.ToString("F0") + " ms ｜ " + detail);
+        }
+
+        internal static string Summary()
+        {
+            return "[更好的存档] 体感窗口测量：全程逐帧 " + totalFrames + " 帧 ｜ 预览捕获 "
+                + captureCount + " 次，合计 " + captureTotal.ToString("F0") + " ms，最长 "
+                + captureMax.ToString("F0") + " ms";
+        }
+    }
+}
