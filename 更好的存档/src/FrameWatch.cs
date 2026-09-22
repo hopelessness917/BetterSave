@@ -34,6 +34,10 @@ namespace SaveOpt
         private static double allowMs;
         private static double deactStart;
         private static double deactMs;
+        private static double lastHeapLog;
+        private static long heapSamples;
+        private static long heapFirst;
+        private static long heapMax;
         private static PropertyInfo captureProp;
         private static bool capturing;
         private static double captureAt;
@@ -126,6 +130,18 @@ namespace SaveOpt
             double gap = now - lastFrame;
             lastFrame = now;
             totalFrames++;
+
+            if (lastHeapLog <= 0) lastHeapLog = now;
+            if (now - lastHeapLog >= 30.0)
+            {
+                lastHeapLog = now;
+                heapSamples++;
+                long mb = GC.GetTotalMemory(false) / 1048576;
+                if (heapFirst == 0) heapFirst = mb;
+                if (mb > heapMax) heapMax = mb;
+                Debug.Log("[更好的存档] 堆采样 #" + heapSamples + "：" + mb + " MB ｜ 回收计数 0/1/2 = "
+                    + GC.CollectionCount(0) + "/" + GC.CollectionCount(1) + "/" + GC.CollectionCount(2));
+            }
 
             if (markPending)
             {
@@ -286,7 +302,8 @@ namespace SaveOpt
         {
             return "[更好的存档] 体感窗口测量：全程逐帧 " + totalFrames + " 帧 ｜ 预览捕获 "
                 + captureCount + " 次，合计 " + captureTotal.ToString("F0") + " ms，最长 "
-                + captureMax.ToString("F0") + " ms";
+                + captureMax.ToString("F0") + " ms ｜ 堆采样 " + heapSamples + " 次，首 "
+                + heapFirst + " MB，峰值 " + heapMax + " MB";
         }
     }
 }

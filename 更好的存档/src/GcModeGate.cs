@@ -10,6 +10,13 @@ namespace SaveOpt
     {
         private const double StuckSeconds = 30.0;
         private const int ProbeMb = 64;
+        private static readonly bool HoldForever = true;
+        private const long HeapCeilingBytes = 20L * 1024 * 1024 * 1024;
+        private const double HoldCeilingSeconds = 10800.0;
+
+        private static long holds;
+        private static long heapPeak;
+        private static double holdWarned;
 
         private static bool supported;
         private static bool engaged;
@@ -129,6 +136,11 @@ namespace SaveOpt
 
             if (engaged)
             {
+                if (HoldForever)
+                {
+                    holds++;
+                    return;
+                }
                 rescued++;
                 Debug.LogWarning("[更好的存档] 上一次存档未正常恢复 GC 模式，本次进入前强制恢复");
                 Restore();
@@ -156,9 +168,30 @@ namespace SaveOpt
         internal static void Exit()
         {
             if (!engaged) return;
+
+            if (HoldForever)
+            {
+                holds++;
+                if (holds == 1)
+                {
+                    Debug.LogWarning("[更好的存档] ★ 诊断模式：完全不回收。存档窗口结束后不还原 GC 模式，"
+                        + "托管堆将持续增长。安全上限 " + (HeapCeilingBytes / 1073741824L)
+                        + " GB 或 " + (int)(HoldCeilingSeconds / 3600) + " 小时，达到即强制还原");
+                }
+                lastTag = "门控 保持Disabled（诊断）";
+                return;
+            }
+
             string was = restoreTo.ToString();
             Restore();
             if (supported) lastTag = "门控 Disabled->" + was;
+        }
+
+        internal static void ExitForced()
+        {
+            if (!engaged) return;
+            Restore();
+            if (supported) lastTag = "门控 强制还原";
         }
 
         private static void Restore()
@@ -194,7 +227,30 @@ namespace SaveOpt
         public static void LateUpdate_Postfix()
         {
             if (!engaged) return;
-            if (Time.realtimeSinceStartup - engagedAt < StuckSeconds) return;
+            double held = Time.realtimeSinceStartup - engagedAt;
+
+            if (HoldForever)
+            {
+                long heap = GC.GetTotalMemory(false);
+                if (heap > heapPeak) heapPeak = heap;
+                if (heap > HeapCeilingBytes || held > HoldCeilingSeconds)
+                {
+                    rescued++;
+                    Debug.LogError("[更好的存档] ★ 诊断模式安全上限触发，强制还原 GC 模式。堆 "
+                        + (heap / 1048576) + " MB，已保持 " + (int)held + " s");
+                    Restore();
+                    lastTag = "门控 上限还原";
+                }
+                else if (holdWarned <= 0 && held > 300.0)
+                {
+                    holdWarned = held;
+                    Debug.LogWarning("[更好的存档] ★ 诊断模式已持续 " + (int)held + " s 不回收，当前堆 "
+                        + (heap / 1048576) + " MB，上限 " + (HeapCeilingBytes / 1073741824L) + " GB");
+                }
+                return;
+            }
+
+            if (held < StuckSeconds) return;
             rescued++;
             Debug.LogWarning("[更好的存档] GC 模式门控超时 " + (int)StuckSeconds + " s 未恢复，看门狗强制恢复");
             Restore();
@@ -209,8 +265,9 @@ namespace SaveOpt
         internal static string Summary()
         {
             return "[更好的存档] GC 模式门控：" + detect + " ｜ " + behaviour + " ｜ 进入 " + enters
-                + " 次，恢复 " + exits + " 次，兜底救回 " + rescued
-                + " 次" + (lastError.Length > 0 ? "，错误=" + lastError : "");
+                + " 次，恢复 " + exits + " 次，兜底救回 " + rescued + " 次"
+                + (HoldForever ? "，诊断保持 " + holds + " 次，峰值堆 " + (heapPeak / 1048576) + " MB" : "")
+                + (lastError.Length > 0 ? "，错误=" + lastError : "");
         }
     }
 }
