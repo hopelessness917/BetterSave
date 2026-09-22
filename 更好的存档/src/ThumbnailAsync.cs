@@ -22,7 +22,6 @@ namespace SaveOpt
     internal static class ThumbnailAsync
     {
         private const float PreviewScale = 0.1f;
-        private const double RefreshSeconds = 1800.0;
 
         private static readonly byte[] Sentinel = new byte[0];
 
@@ -31,14 +30,14 @@ namespace SaveOpt
         private static Vector2Int previewApplied;
         private static bool previewHave;
         private static long previewShrinks;
-        private static bool haveRendered;
         private static bool skipThisSave;
-        private static double lastRenderAt;
-        private static string lastPngPath;
+        private static string capturePath;
+        private static volatile Color32[] cachedPixels;
+        private static int cachedW;
+        private static int cachedH;
         private static long previewCaptures;
         private static long previewSkips;
         private static long previewCopies;
-        private static long previewMisses;
 
         private static readonly object Gate = new object();
         private static readonly Queue<ThumbJob> Queue = new Queue<ThumbJob>();
@@ -132,10 +131,10 @@ namespace SaveOpt
                 harmony.Patch(colony, prefix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(ThumbnailAsync), "SaveColonyPreview_Prefix")));
                 harmony.Patch(refresh, prefix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(ThumbnailAsync), "Refresh_Prefix")));
 
-                Debug.Log("[更好的存档] 预览图跳渲已挂载：每 " + (int)(RefreshSeconds / 60)
-                    + " 分钟才真正做一次捕获，其余存档直接跳过整个捕获并复制上一张 png。"
-                    + "实测捕获开销 1.3-1.4 s 且与分辨率无关（成本在两次完整相机渲染与"
-                    + "RenderAndPrint 内的相机移动，会触发全图重新剔除）");
+                Debug.Log("[更好的存档] 预览图只捕获一次：每个存档周期仅在还没有可用画面时做一次真实捕获"
+                    + "（新档第一次存档必做），之后所有存档都用内存里缓存的那张画面重新编码写盘。"
+                    + "缓存放在内存而不是文件，因此自动存档轮转删除旧档也不会让源图失效。"
+                    + "实测捕获开销 1.3-1.4 s 且与分辨率无关（成本在两次完整相机渲染与相机移动触发的全图重新剔除）");
             }
             catch (Exception e)
             {
@@ -145,53 +144,44 @@ namespace SaveOpt
 
         public static bool SaveColonyPreview_Prefix(string __0)
         {
-            string png;
-            try { png = Path.ChangeExtension(__0, ".png"); }
-            catch (Exception) { return true; }
-            if (string.IsNullOrEmpty(png)) return true;
+            skipThisSave = false;
 
-            if (haveRendered && lastPngPath != null && Time.realtimeSinceStartup - lastRenderAt < RefreshSeconds)
+            if (cachedPixels != null)
             {
                 skipThisSave = true;
                 previewSkips++;
                 if (previewSkips == 1)
                 {
-                    Debug.Log("[更好的存档] 预览图捕获已跳过：整个捕获不做，png 由上一张复制而来"
-                        + "（每 " + (int)(RefreshSeconds / 60) + " 分钟才真正捕获一次）");
+                    Debug.Log("[更好的存档] 预览图捕获已跳过：整个捕获不做，png 由内存缓存的画面重新编码而来");
                 }
                 return false;
             }
 
-            skipThisSave = false;
-            haveRendered = true;
-            lastRenderAt = Time.realtimeSinceStartup;
-            lastPngPath = png;
+            try { capturePath = Path.ChangeExtension(__0, ".png"); }
+            catch (Exception) { capturePath = null; }
             previewCaptures++;
+            Debug.Log("[更好的存档] 预览图首次捕获（本局仅此一次）：" + __0);
             return true;
         }
 
-        internal static string PreviewCopy(out string to, string savePath)
+        internal static bool FinishSave(string savePath)
         {
-            to = null;
-            bool skipped = skipThisSave;
+            if (!skipThisSave) return false;
             skipThisSave = false;
-            if (!skipped) return null;
 
+            Color32[] px = cachedPixels;
+            if (px == null) return false;
+
+            string to;
             try { to = Path.ChangeExtension(savePath, ".png"); }
-            catch (Exception) { to = null; }
-            if (string.IsNullOrEmpty(to)) return null;
+            catch (Exception) { return false; }
+            if (string.IsNullOrEmpty(to)) return false;
 
-            string from = lastPngPath;
-            if (string.IsNullOrEmpty(from) || !File.Exists(from))
-            {
-                previewMisses++;
-                to = null;
-                return null;
-            }
-
-            lastPngPath = to;
+            var job = new ThumbJob { Pixels = px, Width = cachedW, Height = cachedH, Path = to };
+            lock (Gate) Queue.Enqueue(job);
+            Signal.Set();
             previewCopies++;
-            return from;
+            return true;
         }
 
         public static void Refresh_Prefix(Timelapser __instance)
@@ -289,6 +279,15 @@ namespace SaveOpt
             }
 
             job.Path = path;
+            if (capturePath != null && path == capturePath)
+            {
+                cachedW = job.Width;
+                cachedH = job.Height;
+                cachedPixels = job.Pixels;
+                capturePath = null;
+                Debug.Log("[更好的存档] 预览画面已缓存到内存（" + cachedW + " x " + cachedH
+                    + "），本局后续存档不再做真实捕获");
+            }
             lock (Gate) Queue.Enqueue(job);
             Signal.Set();
             return false;
@@ -330,7 +329,7 @@ namespace SaveOpt
                 bool flip = flipRows;
                 byte[] png = Encode(job, flip);
 
-                if (!verified && !mismatch)
+                if (job.Reference != null && !verified && !mismatch)
                 {
                     if (Same(png, job.Reference))
                     {
@@ -455,8 +454,8 @@ namespace SaveOpt
                 + " MB，最近一张 " + lastEncodeMs + " ms；主线程只做像素抓取 " + lastMainMs
                 + " ms；回退 " + fallbacks + " 次"
                 + (mismatch ? " ｜ ★★ 曾出现字节不一致" : " ｜ 首张已与主线程结果逐字节比对通过")
-                + " ｜ 预览图：真实捕获 " + previewCaptures + " 次，跳过 " + previewSkips
-                + " 次，复制复用 " + previewCopies + " 次，无可复制而留空 " + previewMisses + " 次";
+                + " ｜ 预览图：真实捕获 " + previewCaptures + " 次，跳过捕获 " + previewSkips
+                + " 次，按缓存重新编码写盘 " + previewCopies + " 次";
         }
     }
 }
