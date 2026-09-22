@@ -21,7 +21,7 @@ namespace SaveOpt
 
     internal static class ThumbnailAsync
     {
-        private const float PreviewScale = 0.5f;
+        private const float PreviewScale = 0.1f;
 
         private static readonly byte[] Sentinel = new byte[0];
 
