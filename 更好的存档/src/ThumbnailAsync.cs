@@ -22,14 +22,21 @@ namespace SaveOpt
     internal static class ThumbnailAsync
     {
         private const float PreviewScale = 0.1f;
+        private const double RefreshSeconds = 1800.0;
 
         private static readonly byte[] Sentinel = new byte[0];
 
         private static AccessTools.FieldRef<Timelapser, Vector2Int> previewRes;
+        private static AccessTools.FieldRef<Timelapser, bool> previewFlag;
         private static Vector2Int previewOriginal;
         private static Vector2Int previewApplied;
         private static bool previewHave;
         private static long previewShrinks;
+        private static bool skipping;
+        private static bool haveRendered;
+        private static double lastRenderAt;
+        private static long skips;
+        private static long renders;
 
         private static readonly object Gate = new object();
         private static readonly Queue<ThumbJob> Queue = new Queue<ThumbJob>();
@@ -107,30 +114,57 @@ namespace SaveOpt
             try
             {
                 MethodInfo refresh = AccessTools.Method(typeof(Timelapser), "RefreshRenderTextureSize");
-                if (refresh == null)
+                MethodInfo render = AccessTools.Method(typeof(CameraController), "RenderForTimelapser");
+                MethodInfo print = AccessTools.Method(typeof(Timelapser), "RenderAndPrint");
+                if (refresh == null || render == null || print == null)
                 {
-                    Debug.LogWarning("[更好的存档] 找不到 Timelapser.RefreshRenderTextureSize，预览图分辨率未缩放");
+                    Debug.LogWarning("[更好的存档] 找不到预览图相关方法，预览图跳渲未启用");
                     return;
                 }
                 previewRes = AccessTools.FieldRefAccess<Timelapser, Vector2Int>("previewScreenshotResolution");
-                if (previewRes == null)
+                previewFlag = AccessTools.FieldRefAccess<Timelapser, bool>("previewScreenshot");
+                if (previewRes == null || previewFlag == null)
                 {
-                    Debug.LogWarning("[更好的存档] 找不到 Timelapser.previewScreenshotResolution，预览图分辨率未缩放");
+                    Debug.LogWarning("[更好的存档] 找不到 Timelapser 预览图字段，预览图跳渲未启用");
                     return;
                 }
+
                 harmony.Patch(refresh, prefix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(ThumbnailAsync), "Refresh_Prefix")));
-                Debug.Log("[更好的存档] 预览图分辨率缩放已挂载：按 " + PreviewScale.ToString("F2")
-                    + " 生成（渲染像素降到 " + ((int)(PreviewScale * PreviewScale * 100)) + "%，存档窗口外的全图渲染随之变快）");
+                harmony.Patch(render, prefix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(ThumbnailAsync), "RenderForTimelapser_Prefix")));
+                harmony.Patch(print, postfix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(ThumbnailAsync), "RenderAndPrint_Postfix")));
+
+                Debug.Log("[更好的存档] 预览图跳渲已挂载：每 " + (int)(RefreshSeconds / 60)
+                    + " 分钟才真正渲染一次，其余存档直接复用上一张画面（RenderForTimelapser 渲染两个完整相机，"
+                    + "实测 550-760 ms 且与分辨率无关）。本次分辨率按 " + PreviewScale.ToString("F2") + " 生成");
             }
             catch (Exception e)
             {
-                Debug.LogWarning("[更好的存档] 预览图分辨率缩放挂载失败: " + e.Message);
+                Debug.LogWarning("[更好的存档] 预览图跳渲挂载失败: " + e.Message);
             }
         }
 
-        public static void Refresh_Prefix(Timelapser __instance)
+        public static bool Refresh_Prefix(Timelapser __instance)
         {
-            if (previewRes == null) return;
+            skipping = false;
+            if (previewRes == null || previewFlag == null) return true;
+
+            bool isPreview;
+            try { isPreview = previewFlag(__instance); }
+            catch (Exception) { previewFlag = null; return true; }
+            if (!isPreview) return true;
+
+            if (haveRendered && Time.realtimeSinceStartup - lastRenderAt < RefreshSeconds)
+            {
+                skipping = true;
+                skips++;
+                if (skips == 1)
+                {
+                    Debug.Log("[更好的存档] 预览图渲染已跳过：沿用上一次画面，主线程开销归零"
+                        + "（每 " + (int)(RefreshSeconds / 60) + " 分钟刷新一次）");
+                }
+                return false;
+            }
+
             Vector2Int cur = previewRes(__instance);
             if (!previewHave || cur != previewApplied)
             {
@@ -151,6 +185,23 @@ namespace SaveOpt
                 }
                 previewApplied = scaled;
             }
+            return true;
+        }
+
+        public static bool RenderForTimelapser_Prefix()
+        {
+            return !skipping;
+        }
+
+        public static void RenderAndPrint_Postfix()
+        {
+            if (!skipping)
+            {
+                haveRendered = true;
+                lastRenderAt = Time.realtimeSinceStartup;
+                renders++;
+            }
+            skipping = false;
         }
 
         public static IEnumerable<CodeInstruction> Transpile(IEnumerable<CodeInstruction> instructions)
