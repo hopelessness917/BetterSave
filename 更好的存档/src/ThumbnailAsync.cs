@@ -27,16 +27,18 @@ namespace SaveOpt
         private static readonly byte[] Sentinel = new byte[0];
 
         private static AccessTools.FieldRef<Timelapser, Vector2Int> previewRes;
-        private static AccessTools.FieldRef<Timelapser, bool> previewFlag;
         private static Vector2Int previewOriginal;
         private static Vector2Int previewApplied;
         private static bool previewHave;
         private static long previewShrinks;
-        private static bool skipping;
         private static bool haveRendered;
+        private static bool skipThisSave;
         private static double lastRenderAt;
-        private static long skips;
-        private static long renders;
+        private static string lastPngPath;
+        private static long previewCaptures;
+        private static long previewSkips;
+        private static long previewCopies;
+        private static long previewMisses;
 
         private static readonly object Gate = new object();
         private static readonly Queue<ThumbJob> Queue = new Queue<ThumbJob>();
@@ -114,28 +116,26 @@ namespace SaveOpt
             try
             {
                 MethodInfo refresh = AccessTools.Method(typeof(Timelapser), "RefreshRenderTextureSize");
-                MethodInfo render = AccessTools.Method(typeof(CameraController), "RenderForTimelapser");
-                MethodInfo print = AccessTools.Method(typeof(Timelapser), "RenderAndPrint");
-                if (refresh == null || render == null || print == null)
+                MethodInfo colony = AccessTools.Method(typeof(Timelapser), "SaveColonyPreview");
+                if (refresh == null || colony == null)
                 {
                     Debug.LogWarning("[更好的存档] 找不到预览图相关方法，预览图跳渲未启用");
                     return;
                 }
                 previewRes = AccessTools.FieldRefAccess<Timelapser, Vector2Int>("previewScreenshotResolution");
-                previewFlag = AccessTools.FieldRefAccess<Timelapser, bool>("previewScreenshot");
-                if (previewRes == null || previewFlag == null)
+                if (previewRes == null)
                 {
-                    Debug.LogWarning("[更好的存档] 找不到 Timelapser 预览图字段，预览图跳渲未启用");
+                    Debug.LogWarning("[更好的存档] 找不到 Timelapser.previewScreenshotResolution，预览图未启用");
                     return;
                 }
 
+                harmony.Patch(colony, prefix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(ThumbnailAsync), "SaveColonyPreview_Prefix")));
                 harmony.Patch(refresh, prefix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(ThumbnailAsync), "Refresh_Prefix")));
-                harmony.Patch(render, prefix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(ThumbnailAsync), "RenderForTimelapser_Prefix")));
-                harmony.Patch(print, postfix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(ThumbnailAsync), "RenderAndPrint_Postfix")));
 
                 Debug.Log("[更好的存档] 预览图跳渲已挂载：每 " + (int)(RefreshSeconds / 60)
-                    + " 分钟才真正渲染一次，其余存档直接复用上一张画面（RenderForTimelapser 渲染两个完整相机，"
-                    + "实测 550-760 ms 且与分辨率无关）。本次分辨率按 " + PreviewScale.ToString("F2") + " 生成");
+                    + " 分钟才真正做一次捕获，其余存档直接跳过整个捕获并复制上一张 png。"
+                    + "实测捕获开销 1.3-1.4 s 且与分辨率无关（成本在两次完整相机渲染与"
+                    + "RenderAndPrint 内的相机移动，会触发全图重新剔除）");
             }
             catch (Exception e)
             {
@@ -143,28 +143,60 @@ namespace SaveOpt
             }
         }
 
-        public static bool Refresh_Prefix(Timelapser __instance)
+        public static bool SaveColonyPreview_Prefix(string __0)
         {
-            skipping = false;
-            if (previewRes == null || previewFlag == null) return true;
+            string png;
+            try { png = Path.ChangeExtension(__0, ".png"); }
+            catch (Exception) { return true; }
+            if (string.IsNullOrEmpty(png)) return true;
 
-            bool isPreview;
-            try { isPreview = previewFlag(__instance); }
-            catch (Exception) { previewFlag = null; return true; }
-            if (!isPreview) return true;
-
-            if (haveRendered && Time.realtimeSinceStartup - lastRenderAt < RefreshSeconds)
+            if (haveRendered && lastPngPath != null && Time.realtimeSinceStartup - lastRenderAt < RefreshSeconds)
             {
-                skipping = true;
-                skips++;
-                if (skips == 1)
+                skipThisSave = true;
+                previewSkips++;
+                if (previewSkips == 1)
                 {
-                    Debug.Log("[更好的存档] 预览图渲染已跳过：沿用上一次画面，主线程开销归零"
-                        + "（每 " + (int)(RefreshSeconds / 60) + " 分钟刷新一次）");
+                    Debug.Log("[更好的存档] 预览图捕获已跳过：整个捕获不做，png 由上一张复制而来"
+                        + "（每 " + (int)(RefreshSeconds / 60) + " 分钟才真正捕获一次）");
                 }
                 return false;
             }
 
+            skipThisSave = false;
+            haveRendered = true;
+            lastRenderAt = Time.realtimeSinceStartup;
+            lastPngPath = png;
+            previewCaptures++;
+            return true;
+        }
+
+        internal static string PreviewCopy(out string to, string savePath)
+        {
+            to = null;
+            bool skipped = skipThisSave;
+            skipThisSave = false;
+            if (!skipped) return null;
+
+            try { to = Path.ChangeExtension(savePath, ".png"); }
+            catch (Exception) { to = null; }
+            if (string.IsNullOrEmpty(to)) return null;
+
+            string from = lastPngPath;
+            if (string.IsNullOrEmpty(from) || !File.Exists(from))
+            {
+                previewMisses++;
+                to = null;
+                return null;
+            }
+
+            lastPngPath = to;
+            previewCopies++;
+            return from;
+        }
+
+        public static void Refresh_Prefix(Timelapser __instance)
+        {
+            if (previewRes == null) return;
             Vector2Int cur = previewRes(__instance);
             if (!previewHave || cur != previewApplied)
             {
@@ -185,23 +217,6 @@ namespace SaveOpt
                 }
                 previewApplied = scaled;
             }
-            return true;
-        }
-
-        public static bool RenderForTimelapser_Prefix()
-        {
-            return !skipping;
-        }
-
-        public static void RenderAndPrint_Postfix()
-        {
-            if (!skipping)
-            {
-                haveRendered = true;
-                lastRenderAt = Time.realtimeSinceStartup;
-                renders++;
-            }
-            skipping = false;
         }
 
         public static IEnumerable<CodeInstruction> Transpile(IEnumerable<CodeInstruction> instructions)
@@ -439,7 +454,9 @@ namespace SaveOpt
                 + " 张，累计 " + totalEncodeMs + " ms，落盘 " + (bytes / 1048576.0).ToString("F2")
                 + " MB，最近一张 " + lastEncodeMs + " ms；主线程只做像素抓取 " + lastMainMs
                 + " ms；回退 " + fallbacks + " 次"
-                + (mismatch ? " ｜ ★★ 曾出现字节不一致" : " ｜ 首张已与主线程结果逐字节比对通过");
+                + (mismatch ? " ｜ ★★ 曾出现字节不一致" : " ｜ 首张已与主线程结果逐字节比对通过")
+                + " ｜ 预览图：真实捕获 " + previewCaptures + " 次，跳过 " + previewSkips
+                + " 次，复制复用 " + previewCopies + " 次，无可复制而留空 " + previewMisses + " 次";
         }
     }
 }

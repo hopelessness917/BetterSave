@@ -12,6 +12,8 @@ namespace SaveOpt
         internal byte[] Source;
         internal int SourceLength;
         internal string Path;
+        internal string PngFrom;
+        internal string PngTo;
     }
 
     internal static class Sink
@@ -55,10 +57,23 @@ namespace SaveOpt
 
         internal static bool Enqueue(byte[] head, byte[] source, int sourceLength, string path)
         {
+            return Enqueue(head, source, sourceLength, path, null, null);
+        }
+
+        internal static bool Enqueue(byte[] head, byte[] source, int sourceLength, string path, string pngFrom, string pngTo)
+        {
             if ((head == null || head.Length == 0) && (source == null || sourceLength <= 0)) return false;
             lock (Gate)
             {
-                Queue.Enqueue(new WriteJob { Head = head, Source = source, SourceLength = sourceLength, Path = path });
+                Queue.Enqueue(new WriteJob
+                {
+                    Head = head,
+                    Source = source,
+                    SourceLength = sourceLength,
+                    Path = path,
+                    PngFrom = pngFrom,
+                    PngTo = pngTo
+                });
                 Idle.Reset();
             }
             Signal.Set();
@@ -118,6 +133,12 @@ namespace SaveOpt
                 step = "move";
                 if (File.Exists(job.Path)) File.Delete(job.Path);
                 File.Move(tmp, job.Path);
+
+                step = "preview";
+                if (!string.IsNullOrEmpty(job.PngFrom) && !string.IsNullOrEmpty(job.PngTo))
+                {
+                    if (File.Exists(job.PngFrom)) File.Copy(job.PngFrom, job.PngTo, true);
+                }
 
                 lock (Gate)
                 {
