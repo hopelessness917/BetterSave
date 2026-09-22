@@ -22,10 +22,12 @@ namespace SaveOpt
             if (capacity < 1) capacity = 1;
             lock (Gate)
             {
-                int want = (int)(capacity * Margin);
-                if (want < floor) want = floor;
-                if (slot == null || slot.Length < want)
+                int need = capacity;
+                if (need < floor) need = floor;
+                if (slot == null || slot.Length < need)
                 {
+                    int want = (int)(capacity * Margin);
+                    if (want < need) want = need;
                     slot = new byte[want];
                     allocations++;
                 }
