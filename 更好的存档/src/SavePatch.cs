@@ -107,6 +107,7 @@ namespace SaveOpt
             harmony.Patch(save,
                 prefix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(SavePatch), "Save_Prefix")),
                 postfix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(SavePatch), "Save_Postfix")),
+                finalizer: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(SavePatch), "Save_Finalizer")),
                 transpiler: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(SavePatch), "Transpile")));
             Debug.Log("[更好的存档] SaveLoader.Save 已挂载");
 
@@ -129,12 +130,20 @@ namespace SaveOpt
             SaveBuffer.ReleaseStale();
             inSave = true;
             GcTuner.BeginSave();
+            GcModeGate.Enter();
             SaveWatch.Start = Now();
             Debug.Log("[更好的存档] 存档开始 " + (isAutoSave ? "自动" : "手动") + " -> " + Path.GetFileName(filename));
         }
 
+        public static Exception Save_Finalizer(Exception __exception)
+        {
+            GcModeGate.Exit();
+            return __exception;
+        }
+
         public static void Save_Postfix()
         {
+            GcModeGate.Exit();
             inSave = false;
             byte[] head = Capture.TakeHead();
             int srcLen;

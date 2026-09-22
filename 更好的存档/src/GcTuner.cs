@@ -267,7 +267,8 @@ namespace SaveOpt
                 + "，第2代 +" + (GC.CollectionCount(2) - c2)
                 + " ｜ 堆 " + (heapBefore / 1048576) + " -> " + (after / 1048576)
                 + " MB（相对上次回收 +" + (debt / 1048576) + " MB）"
-                + " ｜ CPU " + cores + "（墙钟 " + wall.ToString("F0") + " ms）";
+                + " ｜ CPU " + cores + "（墙钟 " + wall.ToString("F0") + " ms）"
+                + " ｜ " + GcModeGate.Tag();
         }
 
         internal static string Summary()

@@ -19,6 +19,7 @@ namespace SaveOpt
                 SerializerPatch.Apply(harmony);
                 IsDefinedPatch.Apply(harmony);
                 GcTuner.Apply(harmony);
+                GcModeGate.Apply(harmony);
                 ThumbnailAsync.Apply(harmony);
 
                 MethodInfo quit = AccessTools.Method(typeof(Game), "OnApplicationQuit");
@@ -50,6 +51,7 @@ namespace SaveOpt
             Debug.Log(SaveBuffer.Summary());
             Debug.Log(FieldPlanner.Summary());
             Debug.Log(GcTuner.Summary());
+            Debug.Log(GcModeGate.Summary());
             Debug.Log(ThumbnailAsync.Summary());
         }
     }
