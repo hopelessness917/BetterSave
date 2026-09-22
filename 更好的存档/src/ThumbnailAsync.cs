@@ -21,7 +21,15 @@ namespace SaveOpt
 
     internal static class ThumbnailAsync
     {
+        private const float PreviewScale = 0.5f;
+
         private static readonly byte[] Sentinel = new byte[0];
+
+        private static AccessTools.FieldRef<Timelapser, Vector2Int> previewRes;
+        private static Vector2Int previewOriginal;
+        private static Vector2Int previewApplied;
+        private static bool previewHave;
+        private static long previewShrinks;
 
         private static readonly object Gate = new object();
         private static readonly Queue<ThumbJob> Queue = new Queue<ThumbJob>();
@@ -84,6 +92,8 @@ namespace SaveOpt
                 return;
             }
 
+            ApplyPreviewScale(harmony);
+
             Start();
             enabled = true;
             Debug.Log("[更好的存档] 缩略图 PNG 编码已移入后台（EncodeToPNG -> EncodeArrayToPNG + 独立线程；"
@@ -91,6 +101,57 @@ namespace SaveOpt
         }
 
         private static int swappedInjected;
+
+        private static void ApplyPreviewScale(HarmonyLib.Harmony harmony)
+        {
+            try
+            {
+                MethodInfo refresh = AccessTools.Method(typeof(Timelapser), "RefreshRenderTextureSize");
+                if (refresh == null)
+                {
+                    Debug.LogWarning("[更好的存档] 找不到 Timelapser.RefreshRenderTextureSize，预览图分辨率未缩放");
+                    return;
+                }
+                previewRes = AccessTools.FieldRefAccess<Timelapser, Vector2Int>("previewScreenshotResolution");
+                if (previewRes == null)
+                {
+                    Debug.LogWarning("[更好的存档] 找不到 Timelapser.previewScreenshotResolution，预览图分辨率未缩放");
+                    return;
+                }
+                harmony.Patch(refresh, prefix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(ThumbnailAsync), "Refresh_Prefix")));
+                Debug.Log("[更好的存档] 预览图分辨率缩放已挂载：按 " + PreviewScale.ToString("F2")
+                    + " 生成（渲染像素降到 " + ((int)(PreviewScale * PreviewScale * 100)) + "%，存档窗口外的全图渲染随之变快）");
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning("[更好的存档] 预览图分辨率缩放挂载失败: " + e.Message);
+            }
+        }
+
+        public static void Refresh_Prefix(Timelapser __instance)
+        {
+            if (previewRes == null) return;
+            Vector2Int cur = previewRes(__instance);
+            if (!previewHave || cur != previewApplied)
+            {
+                previewOriginal = cur;
+                previewHave = true;
+            }
+            int w = Mathf.Max(64, (int)(previewOriginal.x * PreviewScale));
+            int h = Mathf.Max(64, (int)(previewOriginal.y * PreviewScale));
+            Vector2Int scaled = new Vector2Int(w, h);
+            if (cur != scaled)
+            {
+                previewRes(__instance) = scaled;
+                previewShrinks++;
+                if (previewShrinks == 1)
+                {
+                    Debug.Log("[更好的存档] 预览图分辨率 " + previewOriginal.x + " x " + previewOriginal.y
+                        + " -> " + w + " x " + h);
+                }
+                previewApplied = scaled;
+            }
+        }
 
         public static IEnumerable<CodeInstruction> Transpile(IEnumerable<CodeInstruction> instructions)
         {
