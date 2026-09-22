@@ -11,12 +11,12 @@ namespace SaveOpt
     {
         private const int ProbeMb = 64;
         private const int CheckEveryFrames = 5;
+        private static readonly double ForceSeconds = 600.0;
         private static readonly double StuckSeconds = 1800.0;
 
         private static bool supported;
         private static bool engaged;
         private static bool holding;
-        private static bool releasedThisCycle;
         private static GarbageCollector.Mode restoreTo = GarbageCollector.Mode.Enabled;
         private static double engagedAt;
         private static long engagedHeap;
@@ -26,9 +26,10 @@ namespace SaveOpt
         private static string lastError = "";
         private static long enters;
         private static long byPause;
-        private static long byCycle;
+        private static long byForce;
         private static long byWatchdog;
         private static long rescued;
+        private static double lastCollectAt;
         private static bool warned;
         private static int frameSkip;
         private static long heapNow;
@@ -49,10 +50,11 @@ namespace SaveOpt
                     return;
                 }
                 harmony.Patch(late, postfix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(GcModeGate), "LateUpdate_Postfix")));
-                Debug.Log("[更好的存档] GC 释放策略：每个存档周期回收一次；"
-                    + "若该周期内你按过暂停，则提前在暂停的静止画面上回收，"
-                    + "存档结束后就不再卡那一下。暂停检测="
-                    + (GcTuner.PauseDetectable ? "可用" : "不可用，退化为每周期在存档后回收"));
+                Debug.Log("[更好的存档] GC 释放策略：整周期按住 Disabled，存档窗口因此恒定不受回收影响；"
+                    + "1) 你按暂停时立刻回收（藏在静止画面里）"
+                    + " 2) 若连续 " + (int)(ForceSeconds / 60) + " 分钟没回收过，则强制回收一次"
+                    + " 3) 看门狗 " + (int)StuckSeconds + " s 仅作机制兜底。暂停检测="
+                    + (GcTuner.PauseDetectable ? "可用" : "不可用，退化为仅按时间强制回收"));
             }
             catch (Exception e)
             {
@@ -144,7 +146,6 @@ namespace SaveOpt
             if (engaged)
             {
                 holding = true;
-                releasedThisCycle = false;
                 lastTag = "门控 保持Disabled";
                 return;
             }
@@ -155,8 +156,8 @@ namespace SaveOpt
                 GarbageCollector.GCMode = GarbageCollector.Mode.Disabled;
                 engaged = true;
                 holding = true;
-                releasedThisCycle = false;
                 engagedAt = Time.realtimeSinceStartup;
+                if (lastCollectAt <= 0) lastCollectAt = engagedAt;
                 engagedHeap = SafeHeap();
                 enters++;
                 lastTag = "门控 " + restoreTo + "->Disabled";
@@ -175,15 +176,8 @@ namespace SaveOpt
         internal static void AfterSave()
         {
             if (!engaged) return;
-
-            if (releasedThisCycle)
-            {
-                lastTag = "门控 本周期已在暂停回收";
-                return;
-            }
-
-            byCycle++;
-            Release("每周期回收 堆 " + (heapNow / 1048576) + " MB");
+            lastTag = "门控 保持Disabled（堆 " + (heapNow / 1048576) + " MB，距上次回收 "
+                + ((Time.realtimeSinceStartup - lastCollectAt)).ToString("F0") + " s）";
         }
 
         internal static void ExitForced()
@@ -229,10 +223,20 @@ namespace SaveOpt
             if (++frameSkip < CheckEveryFrames) return;
             frameSkip = 0;
 
-            if (holding && !releasedThisCycle && GcTuner.IsPaused())
+            if (holding && GcTuner.PauseDetectable && GcTuner.IsPaused())
             {
                 byPause++;
                 Release("暂停 堆 " + (heapNow / 1048576) + " MB");
+                ReEngage();
+                return;
+            }
+
+            double idle = Time.realtimeSinceStartup - lastCollectAt;
+            if (idle >= ForceSeconds)
+            {
+                byForce++;
+                Release("连续 " + (int)(ForceSeconds / 60) + " 分钟未回收，强制回收 堆 "
+                    + (heapNow / 1048576) + " MB");
                 ReEngage();
                 return;
             }
@@ -248,7 +252,7 @@ namespace SaveOpt
         {
             engaged = false;
             holding = false;
-            releasedThisCycle = true;
+            lastCollectAt = Time.realtimeSinceStartup;
 
             try
             {
@@ -306,8 +310,8 @@ namespace SaveOpt
         internal static string Summary()
         {
             return "[更好的存档] GC 释放策略：" + detect + " ｜ " + behaviour + " ｜ 进入 " + enters
-                + " 个周期，放行 " + (byPause + byCycle + byWatchdog + rescued)
-                + " 次（暂停 " + byPause + "，周期末 " + byCycle + "，看门狗 " + byWatchdog
+                + " 个周期，放行 " + (byPause + byForce + byWatchdog + rescued)
+                + " 次（暂停 " + byPause + "，强制 " + byForce + "，看门狗 " + byWatchdog
                 + "，异常 " + rescued + "）｜ 峰值堆 " + (heapPeak / 1048576) + " MB"
                 + (lastError.Length > 0 ? "，错误=" + lastError : "");
         }
