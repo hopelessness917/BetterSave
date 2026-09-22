@@ -11,9 +11,13 @@ namespace SaveOpt
     {
         private const int ProbeMb = 64;
         private const int CheckEveryFrames = 5;
-        private const float EmergencyFraction = 0.90f;
-        private static readonly long HeapThresholdBytes = 8L * 1024 * 1024 * 1024;
-        private static readonly double StuckSeconds = 1800.0;
+        private const float EmergencyFractionNominal = 0.90f;
+        private const float EmergencyFractionTest = 0.40f;
+        private static readonly bool EmergencyTest = true;
+        private static readonly float EmergencyFraction = EmergencyTest ? EmergencyFractionTest : EmergencyFractionNominal;
+        private static readonly long HeapThresholdBytes = EmergencyTest
+            ? 40L * 1024 * 1024 * 1024 : 8L * 1024 * 1024 * 1024;
+        private static readonly double StuckSeconds = EmergencyTest ? 7200.0 : 1800.0;
 
         private static bool supported;
         private static bool engaged;
@@ -52,10 +56,17 @@ namespace SaveOpt
                     return;
                 }
                 harmony.Patch(late, postfix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(GcModeGate), "LateUpdate_Postfix")));
-                Debug.Log("[更好的存档] GC 模式门控释放策略：暂停时回收 ｜ 堆达 "
-                    + (HeapThresholdBytes / 1048576) + " MB 时在下次存档后回收 ｜ 达本机物理内存 "
-                    + (int)(EmergencyFraction * 100) + "% 时立即回收并弹窗 ｜ 看门狗兜底 "
+                Debug.Log("[更好的存档] GC 模式门控释放策略" + (EmergencyTest ? "（★ 紧急层测试模式）" : "") + "："
+                    + (EmergencyTest ? "暂停层已关 ｜ 阈值层临时抬到 " + (HeapThresholdBytes / 1073741824L) + " GB（否则紧急层永远达不到）｜ "
+                        : "暂停时回收 ｜ 堆达 " + (HeapThresholdBytes / 1048576) + " MB 时在下次存档后回收 ｜ ")
+                    + "达本机物理内存 " + (int)(EmergencyFraction * 100) + "% 时立即回收并弹窗 ｜ 看门狗兜底 "
                     + (int)StuckSeconds + " s");
+                if (EmergencyTest)
+                {
+                    Debug.LogWarning("[更好的存档] ★ 测试期：堆达本机物理内存 " + (int)(EmergencyFraction * 100)
+                        + "%（本机约 " + ((long)SystemInfo.systemMemorySize * EmergencyFraction / 1024) + " GB）会立即回收并弹窗；"
+                        + "按 F9 可立刻手动触发一次，不必等堆涨上去");
+                }
             }
             catch (Exception e)
             {
@@ -202,12 +213,20 @@ namespace SaveOpt
             heapNow = SafeHeap();
             if (heapNow > heapPeak) heapPeak = heapNow;
 
+            if (EmergencyTest && engaged && HotkeyPressed())
+            {
+                byEmergency++;
+                Release("测试 F9 手动触发 堆 " + (heapNow / 1048576) + " MB");
+                Popup(heapNow / 1048576, (long)SystemInfo.systemMemorySize);
+                return;
+            }
+
             if (!engaged) return;
 
             if (++frameSkip < CheckEveryFrames) return;
             frameSkip = 0;
 
-            if (holding && GcTuner.IsPaused())
+            if (holding && !EmergencyTest && GcTuner.IsPaused())
             {
                 byPause++;
                 Release("暂停 堆 " + (heapNow / 1048576) + " MB");
@@ -229,6 +248,12 @@ namespace SaveOpt
                 byWatchdog++;
                 Release("看门狗超时 " + (int)StuckSeconds + " s 堆 " + (heapNow / 1048576) + " MB");
             }
+        }
+
+        private static bool HotkeyPressed()
+        {
+            try { return Input.GetKeyDown(KeyCode.F9); }
+            catch (Exception) { return false; }
         }
 
         private static void Release(string reason)
