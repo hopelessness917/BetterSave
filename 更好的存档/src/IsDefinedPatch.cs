@@ -56,16 +56,17 @@ namespace SaveOpt
 
     internal static class IsDefinedPatch
     {
-        internal static void Apply(HarmonyLib.Harmony harmony)
+        internal static bool Apply(HarmonyLib.Harmony harmony)
         {
             MethodInfo target = AccessTools.Method(typeof(SaveLoadRoot), "SaveWithoutTransform");
             if (target == null)
             {
                 Debug.LogError("[更好的存档] 找不到 SaveLoadRoot.SaveWithoutTransform，第三刀未挂载");
-                return;
+                return false;
             }
             harmony.Patch(target, transpiler: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(IsDefinedPatch), "Transpile")));
-            Debug.Log("[更好的存档] SaveLoadRoot.SaveWithoutTransform 已挂载（IsDefined 类型缓存）");
+            Diag.Trace("[更好的存档] SaveLoadRoot.SaveWithoutTransform 已挂载（IsDefined 类型缓存）");
+            return true;
         }
 
         public static IEnumerable<CodeInstruction> Transpile(IEnumerable<CodeInstruction> instructions)
@@ -102,7 +103,7 @@ namespace SaveOpt
                 foreach (ExceptionBlock eb in ins.blocks) rep.blocks.Add(eb);
                 list[i] = rep;
                 swapped++;
-                Debug.Log("[更好的存档] IsDefined 替换点 @" + i + "：" + m.DeclaringType.Name + "::IsDefined(Type, bool)");
+                Diag.Trace("[更好的存档] IsDefined 替换点 @" + i + "：" + m.DeclaringType.Name + "::IsDefined(Type, bool)");
             }
 
             if (swapped == 0)
@@ -110,7 +111,7 @@ namespace SaveOpt
                 Debug.LogError("[更好的存档] 未找到 IsDefined 调用点，放弃第三刀（游戏可运行）");
                 return instructions;
             }
-            Debug.Log("[更好的存档] IsDefined 替换 " + swapped + " 处，跳过 " + skipped + " 处（同栈效果：3 弹 1 压）");
+            Diag.Trace("[更好的存档] IsDefined 替换 " + swapped + " 处，跳过 " + skipped + " 处（同栈效果：3 弹 1 压）");
             return list;
         }
     }

@@ -56,8 +56,9 @@ namespace SaveOpt
         private static double captureTotal;
         private static double captureMax;
 
-        internal static void Apply(HarmonyLib.Harmony harmony)
+        internal static bool Apply(HarmonyLib.Harmony harmony)
         {
+            bool frameHook = false;
             try
             {
                 Type appType = AccessTools.TypeByName("App");
@@ -70,7 +71,8 @@ namespace SaveOpt
                 {
                     harmony.Patch(late, postfix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(FrameWatch), "Tick")));
                     lastFrame = Time.realtimeSinceStartup;
-                    Debug.Log("[更好的存档] 体感窗口测量已挂载（逐帧记录存档开始后 " + (int)Window + " s 内 ≥"
+                    frameHook = true;
+                    Diag.Trace("[更好的存档] 体感窗口测量已挂载（逐帧记录存档开始后 " + (int)Window + " s 内 ≥"
                         + (int)ThresholdMs + " ms 的卡顿）");
                 }
 
@@ -81,7 +83,7 @@ namespace SaveOpt
                     harmony.Patch(rap,
                         prefix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(FrameWatch), "Preview_Prefix")),
                         postfix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(FrameWatch), "Preview_Postfix")));
-                    Debug.Log("[更好的存档] 预览图生成计时已挂载（Timelapser.RenderAndPrint）");
+                    Diag.Trace("[更好的存档] 预览图生成计时已挂载（Timelapser.RenderAndPrint）");
                 }
                 else
                 {
@@ -96,7 +98,7 @@ namespace SaveOpt
                 captureWatch = AccessTools.Method(typeof(GameUtil), "IsCapturingTimeLapse") != null;
                 if (captureWatch)
                 {
-                    Debug.Log("[更好的存档] 预览捕获状态监测已挂载（经 GameUtil.IsCapturingTimeLapse，该状态为真时 CameraController 不处理输入）");
+                    Diag.Trace("[更好的存档] 预览捕获状态监测已挂载（经 GameUtil.IsCapturingTimeLapse，该状态为真时 CameraController 不处理输入）");
                 }
                 else
                 {
@@ -107,6 +109,7 @@ namespace SaveOpt
             {
                 Debug.LogWarning("[更好的存档] 体感窗口测量挂载失败: " + e.Message);
             }
+            return frameHook;
         }
 
         private static void PatchTimer(HarmonyLib.Harmony harmony, Type owner, string name,
@@ -124,7 +127,7 @@ namespace SaveOpt
                 harmony.Patch(m,
                     prefix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(FrameWatch), prefix)),
                     postfix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(FrameWatch), postfix)));
-                Debug.Log("[更好的存档] 存档帧分项计时已挂载：" + label);
+                Diag.Trace("[更好的存档] 存档帧分项计时已挂载：" + label);
             }
             catch (Exception e)
             {
@@ -147,7 +150,7 @@ namespace SaveOpt
                 long mb = GC.GetTotalMemory(false) / 1048576;
                 if (heapFirst == 0) heapFirst = mb;
                 if (mb > heapMax) heapMax = mb;
-                Debug.Log("[更好的存档] 堆采样 #" + heapSamples + "：" + mb + " MB ｜ 回收计数 0/1/2 = "
+                Diag.Trace("[更好的存档] 堆采样 #" + heapSamples + "：" + mb + " MB ｜ 回收计数 0/1/2 = "
                     + GC.CollectionCount(0) + "/" + GC.CollectionCount(1) + "/" + GC.CollectionCount(2)
                     + " ｜ GCMode=" + GarbageCollector.GCMode);
             }
@@ -166,7 +169,7 @@ namespace SaveOpt
                 if (hitchCount <= HitchLogCap)
                 {
                     double since = lastSaveAt > 0 ? now - lastSaveAt : -1;
-                    Debug.Log("[更好的存档] 全程卡顿 " + (gap * 1000.0).ToString("F0") + " ms ｜ 距上次存档结束 "
+                    Diag.Trace("[更好的存档] 全程卡顿 " + (gap * 1000.0).ToString("F0") + " ms ｜ 距上次存档结束 "
                         + (since < 0 ? "?" : since.ToString("F0")) + " s（越大越说明发生在游玩中）｜ 回收计数 0/1/2 = "
                         + GC.CollectionCount(0) + "/" + GC.CollectionCount(1) + "/" + GC.CollectionCount(2)
                         + " ｜ 累计 " + hitchCount + " 次");
@@ -206,7 +209,7 @@ namespace SaveOpt
                     captureCount++;
                     captureTotal += d;
                     if (d > captureMax) captureMax = d;
-                    Debug.Log("[更好的存档] 预览捕获窗口结束：持续 " + d.ToString("F0")
+                    Diag.Trace("[更好的存档] 预览捕获窗口结束：持续 " + d.ToString("F0")
                         + " ms（该期间 CameraController 不处理输入）");
                 }
             }
@@ -303,7 +306,7 @@ namespace SaveOpt
 
         public static void Preview_Postfix()
         {
-            Debug.Log("[更好的存档] 预览图生成（主线程，落在存档计时窗口之外）："
+            Diag.Trace("[更好的存档] 预览图生成（主线程，落在存档计时窗口之外）："
                 + ((Time.realtimeSinceStartup - previewStart) * 1000.0).ToString("F0") + " ms");
         }
 
@@ -322,7 +325,7 @@ namespace SaveOpt
                 gcs += (i > 0 ? "、" : " ") + gcOffsets[i].ToString("F1") + " s";
             }
 
-            Debug.Log("[更好的存档] 体感窗口：自存档开始 " + (int)Window + " s 内逐帧 " + windowFrames
+            Diag.Trace("[更好的存档] 体感窗口：自存档开始 " + (int)Window + " s 内逐帧 " + windowFrames
                 + " 帧（累计 " + totalFrames + "）｜ 主线程存档窗口 " + saveMs.ToString("F0")
                 + " ms ｜ ≥" + (int)ThresholdMs + " ms 的卡顿 " + count + " 段，合计 "
                 + gapTotal.ToString("F0") + " ms，最长 " + gapMax.ToString("F0") + " ms ｜ " + detail

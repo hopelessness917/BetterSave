@@ -88,20 +88,21 @@ namespace SaveOpt
     internal static class SavePatch
     {
         private static string pendingPath = "";
+        private static bool isAuto;
         private static volatile bool inSave;
         private static long saved;
         private static double lastMs;
 
         internal static bool InSave { get { return inSave; } }
 
-        internal static void Apply(HarmonyLib.Harmony harmony)
+        internal static bool Apply(HarmonyLib.Harmony harmony)
         {
             MethodInfo save = AccessTools.Method(typeof(SaveLoader), "Save", new[] { typeof(string), typeof(bool), typeof(bool) });
             MethodInfo compress = AccessTools.Method(typeof(SaveLoader), "CompressContents");
             if (save == null || compress == null)
             {
                 Debug.LogError("[更好的存档] 找不到 SaveLoader.Save / CompressContents，补丁未挂载");
-                return;
+                return false;
             }
 
             harmony.Patch(save,
@@ -109,23 +110,22 @@ namespace SaveOpt
                 postfix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(SavePatch), "Save_Postfix")),
                 finalizer: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(SavePatch), "Save_Finalizer")),
                 transpiler: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(SavePatch), "Transpile")));
-            Debug.Log("[更好的存档] SaveLoader.Save 已挂载");
 
             harmony.Patch(compress,
                 prefix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(SavePatch), "Compress_Prefix")));
-            Debug.Log("[更好的存档] CompressContents 已挂载");
 
             MethodInfo gc = AccessTools.Method(typeof(GC), "Collect", Type.EmptyTypes);
             if (gc != null)
             {
                 harmony.Patch(gc, prefix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(SavePatch), "GC_Prefix")));
-                Debug.Log("[更好的存档] GC.Collect 已挂载");
             }
+            return true;
         }
 
         public static void Save_Prefix(string filename, bool isAutoSave)
         {
             pendingPath = filename;
+            isAuto = isAutoSave;
             Capture.Reset();
             SaveBuffer.ReleaseStale();
             inSave = true;
@@ -133,7 +133,7 @@ namespace SaveOpt
             GcModeGate.Enter();
             FrameWatch.Begin();
             SaveWatch.Start = Now();
-            Debug.Log("[更好的存档] 存档开始 " + (isAutoSave ? "自动" : "手动") + " -> " + Path.GetFileName(filename));
+            Diag.Trace("[更好的存档] 存档开始 " + (isAutoSave ? "自动" : "手动") + " -> " + Path.GetFileName(filename));
         }
 
         public static Exception Save_Finalizer(Exception __exception)
@@ -168,10 +168,16 @@ namespace SaveOpt
             string pngTo; string pngFrom = ThumbnailAsync.FinishSave(path, out pngTo);
             if (pngFrom != null) FrameWatch.NotePreviewCopy();
             if (!Sink.Enqueue(head, src, srcLen, path, pngFrom, pngTo)) SaveBuffer.Release(src);
-            Debug.Log("[更好的存档] 主线程移交后台：头部 " + ((head == null ? 0 : head.Length) / 1024) + " KB + 未压缩 "
-                + (srcLen / 1048576.0).ToString("F1") + " MB；主线程存档耗时 " + total.ToString("F0") + " ms");
-            Debug.Log(IsDefinedCache.Summary());
-            Debug.Log(GcTuner.SaveSummary());
+
+            Debug.Log("[更好的存档] 存档 #" + saved + " " + (isAuto ? "自动" : "手动") + " -> "
+                + Path.GetFileName(path) + " ｜ 主线程 " + total.ToString("F0") + " ms ｜ 未压缩 "
+                + (srcLen / 1048576.0).ToString("F1") + " MB ｜ 堆 " + GcTuner.HeapMb() + " MB");
+
+            if (Diag.Verbose)
+            {
+                Debug.Log(IsDefinedCache.Summary());
+                Debug.Log(GcTuner.SaveSummary());
+            }
         }
 
         public static bool Compress_Prefix()
@@ -303,7 +309,7 @@ namespace SaveOpt
                 return instructions;
             }
 
-            Debug.Log("[更好的存档] transpiler: 图流记录=1 换流=1 输出记录=1，结构性校验通过");
+            Diag.Trace("[更好的存档] transpiler: 图流记录=1 换流=1 输出记录=1，结构性校验通过");
             return list;
         }
 

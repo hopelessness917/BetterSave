@@ -61,14 +61,14 @@ namespace SaveOpt
         private static long bytes;
         private static string lastNote = "";
 
-        internal static void Apply(HarmonyLib.Harmony harmony)
+        internal static bool Apply(HarmonyLib.Harmony harmony)
         {
             MethodInfo target = AccessTools.Method(typeof(Timelapser), "WriteToPng");
             MethodInfo writeAll = AccessTools.Method(typeof(File), "WriteAllBytes", new[] { typeof(string), typeof(byte[]) });
             if (target == null || writeAll == null)
             {
                 Debug.LogWarning("[更好的存档] 找不到 Timelapser.WriteToPng 或 File.WriteAllBytes，缩略图后台化未挂载");
-                return;
+                return false;
             }
 
             int swapped = 0;
@@ -80,13 +80,13 @@ namespace SaveOpt
             catch (Exception e)
             {
                 Debug.LogError("[更好的存档] 缩略图 transpiler 挂载失败: " + e.Message);
-                return;
+                return false;
             }
 
             if (swapped != 1)
             {
                 Debug.LogError("[更好的存档] 缩略图替换点数量异常（" + swapped + "），缩略图后台化未启用");
-                return;
+                return false;
             }
 
             try
@@ -96,15 +96,16 @@ namespace SaveOpt
             catch (Exception e)
             {
                 Debug.LogError("[更好的存档] File.WriteAllBytes 挂载失败: " + e.Message);
-                return;
+                return false;
             }
 
             ApplyPreviewScale(harmony);
 
             Start();
             enabled = true;
-            Debug.Log("[更好的存档] 缩略图 PNG 编码已移入后台（EncodeToPNG -> EncodeArrayToPNG + 独立线程；"
+            Diag.Trace("[更好的存档] 缩略图 PNG 编码已移入后台（EncodeToPNG -> EncodeArrayToPNG + 独立线程；"
                 + "首张做字节级比对，行序自动判定，不一致则永久回退）");
+            return true;
         }
 
         private static int swappedInjected;
@@ -130,7 +131,7 @@ namespace SaveOpt
                 harmony.Patch(colony, prefix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(ThumbnailAsync), "SaveColonyPreview_Prefix")));
                 harmony.Patch(refresh, prefix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(ThumbnailAsync), "Refresh_Prefix")));
 
-                Debug.Log("[更好的存档] 预览图只在开局第一次存档时捕获一次，之后每次存档都直接复制上一周期那张 png。"
+                Diag.Trace("[更好的存档] 预览图只在开局第一次存档时捕获一次，之后每次存档都直接复制上一周期那张 png。"
                     + "源是上一周期而不是开局那张，因此永远落在自动存档最近 10 个槽位内，不会被轮转删除。"
                     + "实测捕获开销 1.3-1.4 s 且与分辨率无关（成本在两次完整相机渲染与相机移动触发的全图重新剔除）");
             }
@@ -212,7 +213,7 @@ namespace SaveOpt
                 previewShrinks++;
                 if (previewShrinks == 1)
                 {
-                    Debug.Log("[更好的存档] 预览图分辨率 " + previewOriginal.x + " x " + previewOriginal.y
+                    Diag.Trace("[更好的存档] 预览图分辨率 " + previewOriginal.x + " x " + previewOriginal.y
                         + " -> " + w + " x " + h);
                 }
                 previewApplied = scaled;
@@ -366,7 +367,7 @@ namespace SaveOpt
 
                 if (jobs == 1 || mismatch)
                 {
-                    Debug.Log("[更好的存档] 缩略图后台编码：首张 " + job.Width + "x" + job.Height
+                    Diag.Trace("[更好的存档] 缩略图后台编码：首张 " + job.Width + "x" + job.Height
                         + "，" + png.Length + " 字节，后台耗时 " + ms + " ms（主线程抓像素 "
                         + lastMainMs + " ms）"
                         + (job.Reference != null ? "；同一张在主线程用原方法编码要 " + refEncodeMs + " ms —— 这就是本刀从主线程拿走的部分" : "")

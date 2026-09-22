@@ -88,16 +88,17 @@ namespace SaveOpt
         internal static long Mismatches { get { return mismatches; } }
         internal static long Calls { get { return calls; } }
 
-        internal static void Apply(HarmonyLib.Harmony harmony)
+        internal static bool Apply(HarmonyLib.Harmony harmony)
         {
             MethodInfo target = AccessTools.Method(typeof(KSerialization.SerializationTemplate), "SerializeData");
             if (target == null)
             {
                 Debug.LogError("[更好的存档] 找不到 SerializationTemplate.SerializeData，第二刀未挂载");
-                return;
+                return false;
             }
             harmony.Patch(target, prefix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(SerializerPatch), "Prefix")));
-            Debug.Log("[更好的存档] SerializationTemplate.SerializeData 已接管（编译委托替代逐字段反射，首轮存档做双路校验）");
+            Diag.Trace("[更好的存档] SerializationTemplate.SerializeData 已接管（编译委托替代逐字段反射，首轮存档做双路校验）");
+            return true;
         }
 
         internal static void EndVerify(string reason)

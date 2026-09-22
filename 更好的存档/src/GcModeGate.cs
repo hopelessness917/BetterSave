@@ -39,10 +39,10 @@ namespace SaveOpt
         private static long heapNow;
         private static long heapPeak;
 
-        internal static void Apply(HarmonyLib.Harmony harmony)
+        internal static bool Apply(HarmonyLib.Harmony harmony)
         {
             Detect();
-            if (!supported) return;
+            if (!supported) return false;
 
             try
             {
@@ -51,7 +51,7 @@ namespace SaveOpt
                 if (late == null)
                 {
                     Debug.LogWarning("[更好的存档] 找不到 App.LateUpdate，GC 模式门控看门狗未挂载（仍有 finalizer 兜底）");
-                    return;
+                    return false;
                 }
                 harmony.Patch(late, postfix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(GcModeGate), "LateUpdate_Postfix")));
                 Debug.Log("[更好的存档] GC 释放策略：整周期按住 Disabled，存档窗口因此恒定不受回收影响；"
@@ -59,10 +59,12 @@ namespace SaveOpt
                     + " 2) 若连续 " + (int)(ForceSeconds / 60) + " 分钟没回收过，则强制回收一次"
                     + " 3) 看门狗 " + (int)StuckSeconds + " s 仅作机制兜底。暂停检测="
                     + (GcTuner.PauseDetectable ? "可用" : "不可用，退化为仅按时间强制回收"));
+                return true;
             }
             catch (Exception e)
             {
                 Debug.LogWarning("[更好的存档] GC 模式门控看门狗挂载失败: " + e.Message);
+                return false;
             }
         }
 
@@ -332,7 +334,7 @@ namespace SaveOpt
             if (!warned)
             {
                 warned = true;
-                Debug.Log("[更好的存档] 首次放行回收（" + reason + "）：保持 Disabled 期间堆由 "
+                Diag.Trace("[更好的存档] 首次放行回收（" + reason + "）：保持 Disabled 期间堆由 "
                     + (engagedHeap / 1048576) + " MB 涨到 " + (heapNow / 1048576) + " MB");
             }
 

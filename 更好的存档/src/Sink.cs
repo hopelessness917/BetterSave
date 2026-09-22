@@ -149,7 +149,7 @@ namespace SaveOpt
                     lastCompressMs = swc.Elapsed.TotalMilliseconds;
                     lastWriteMs = sww.Elapsed.TotalMilliseconds;
                 }
-                Debug.Log("[更好的存档] 后台完成：压缩 " + ((long)lastCompressMs) + " ms + 写盘 " + ((long)lastWriteMs)
+                Diag.Trace("[更好的存档] 后台完成：压缩 " + ((long)lastCompressMs) + " ms + 写盘 " + ((long)lastWriteMs)
                     + " ms，输出 " + (outBytes / 1048576.0).ToString("F1") + " MB 累计 -> " + Path.GetFileName(job.Path));
             }
             catch (Exception e)
