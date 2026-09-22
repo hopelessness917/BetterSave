@@ -11,17 +11,12 @@ namespace SaveOpt
     {
         private const int ProbeMb = 64;
         private const int CheckEveryFrames = 5;
-        private const float EmergencyFractionNominal = 0.90f;
-        private const float EmergencyFractionTest = 0.40f;
-        private static readonly bool EmergencyTest = true;
-        private static readonly float EmergencyFraction = EmergencyTest ? EmergencyFractionTest : EmergencyFractionNominal;
-        private static readonly long HeapThresholdBytes = EmergencyTest
-            ? 40L * 1024 * 1024 * 1024 : 8L * 1024 * 1024 * 1024;
-        private static readonly double StuckSeconds = EmergencyTest ? 7200.0 : 1800.0;
+        private static readonly double StuckSeconds = 1800.0;
 
         private static bool supported;
         private static bool engaged;
         private static bool holding;
+        private static bool releasedThisCycle;
         private static GarbageCollector.Mode restoreTo = GarbageCollector.Mode.Enabled;
         private static double engagedAt;
         private static long engagedHeap;
@@ -30,12 +25,10 @@ namespace SaveOpt
         private static string behaviour = "未探测";
         private static string lastError = "";
         private static long enters;
-        private static long exits;
-        private static long rescued;
         private static long byPause;
-        private static long byThreshold;
-        private static long byEmergency;
+        private static long byCycle;
         private static long byWatchdog;
+        private static long rescued;
         private static bool warned;
         private static int frameSkip;
         private static long heapNow;
@@ -56,17 +49,10 @@ namespace SaveOpt
                     return;
                 }
                 harmony.Patch(late, postfix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(GcModeGate), "LateUpdate_Postfix")));
-                Debug.Log("[更好的存档] GC 模式门控释放策略" + (EmergencyTest ? "（★ 紧急层测试模式）" : "") + "："
-                    + (EmergencyTest ? "暂停层已关 ｜ 阈值层临时抬到 " + (HeapThresholdBytes / 1073741824L) + " GB（否则紧急层永远达不到）｜ "
-                        : "暂停时回收 ｜ 堆达 " + (HeapThresholdBytes / 1048576) + " MB 时在下次存档后回收 ｜ ")
-                    + "达本机物理内存 " + (int)(EmergencyFraction * 100) + "% 时立即回收并弹窗 ｜ 看门狗兜底 "
-                    + (int)StuckSeconds + " s");
-                if (EmergencyTest)
-                {
-                    Debug.LogWarning("[更好的存档] ★ 测试期：堆达本机物理内存 " + (int)(EmergencyFraction * 100)
-                        + "%（本机约 " + ((long)SystemInfo.systemMemorySize * EmergencyFraction / 1024) + " GB）会立即回收并弹窗；"
-                        + "按 F9 可立刻手动触发一次，不必等堆涨上去");
-                }
+                Debug.Log("[更好的存档] GC 释放策略：每个存档周期回收一次；"
+                    + "若该周期内你按过暂停，则提前在暂停的静止画面上回收，"
+                    + "存档结束后就不再卡那一下。暂停检测="
+                    + (GcTuner.PauseDetectable ? "可用" : "不可用，退化为每周期在存档后回收"));
             }
             catch (Exception e)
             {
@@ -105,7 +91,7 @@ namespace SaveOpt
             if (supported)
             {
                 Debug.Log("[更好的存档] GC 模式门控可用：" + detect + " ｜ " + behaviour
-                    + "。存档窗口内自动回收已被挡住，窗口结束后按策略决定何时放行");
+                    + "。存档窗口内自动回收已被挡住，窗口结束后按策略放行");
             }
             else
             {
@@ -158,6 +144,7 @@ namespace SaveOpt
             if (engaged)
             {
                 holding = true;
+                releasedThisCycle = false;
                 lastTag = "门控 保持Disabled";
                 return;
             }
@@ -168,6 +155,7 @@ namespace SaveOpt
                 GarbageCollector.GCMode = GarbageCollector.Mode.Disabled;
                 engaged = true;
                 holding = true;
+                releasedThisCycle = false;
                 engagedAt = Time.realtimeSinceStartup;
                 engagedHeap = SafeHeap();
                 enters++;
@@ -188,22 +176,21 @@ namespace SaveOpt
         {
             if (!engaged) return;
 
-            long heap = SafeHeap();
-            if (heap >= HeapThresholdBytes)
+            if (releasedThisCycle)
             {
-                byThreshold++;
-                Release("阈值 堆 " + (heap / 1048576) + " MB 已达 " + (HeapThresholdBytes / 1048576) + " MB");
+                lastTag = "门控 本周期已在暂停回收";
                 return;
             }
 
-            lastTag = "门控 保持Disabled（堆 " + (heap / 1048576) + " MB）";
+            byCycle++;
+            Release("每周期回收 堆 " + (heapNow / 1048576) + " MB");
         }
 
         internal static void ExitForced()
         {
             if (!engaged) return;
-            Release("异常兜底");
             rescued++;
+            Release("异常兜底 堆 " + (heapNow / 1048576) + " MB");
         }
 
         public static void LateUpdate_Postfix()
@@ -213,33 +200,16 @@ namespace SaveOpt
             heapNow = SafeHeap();
             if (heapNow > heapPeak) heapPeak = heapNow;
 
-            if (EmergencyTest && engaged && HotkeyPressed())
-            {
-                byEmergency++;
-                Release("测试 F9 手动触发 堆 " + (heapNow / 1048576) + " MB");
-                Popup(heapNow / 1048576, (long)SystemInfo.systemMemorySize);
-                return;
-            }
-
             if (!engaged) return;
 
             if (++frameSkip < CheckEveryFrames) return;
             frameSkip = 0;
 
-            if (holding && !EmergencyTest && GcTuner.IsPaused())
+            if (holding && !releasedThisCycle && GcTuner.IsPaused())
             {
                 byPause++;
+                releasedThisCycle = true;
                 Release("暂停 堆 " + (heapNow / 1048576) + " MB");
-                return;
-            }
-
-            long total = (long)SystemInfo.systemMemorySize * 1048576L;
-            if (total > 0 && heapNow >= (long)(total * EmergencyFraction))
-            {
-                byEmergency++;
-                Release("紧急 托管堆 " + (heapNow / 1048576) + " MB / 物理内存 "
-                    + (total / 1048576) + " MB");
-                Popup(heapNow / 1048576, total / 1048576);
                 return;
             }
 
@@ -250,17 +220,11 @@ namespace SaveOpt
             }
         }
 
-        private static bool HotkeyPressed()
-        {
-            try { return Input.GetKeyDown(KeyCode.F9); }
-            catch (Exception) { return false; }
-        }
-
         private static void Release(string reason)
         {
             engaged = false;
             holding = false;
-            exits++;
+            releasedThisCycle = true;
 
             try
             {
@@ -283,7 +247,7 @@ namespace SaveOpt
                 return;
             }
 
-            if (!warned && (byPause + byThreshold + byEmergency + byWatchdog) == 1)
+            if (!warned)
             {
                 warned = true;
                 Debug.Log("[更好的存档] 首次放行回收（" + reason + "）：保持 Disabled 期间堆由 "
@@ -295,33 +259,8 @@ namespace SaveOpt
             catch (Exception e) { lastError = e.GetType().Name + " " + e.Message; }
             long ms = (long)(Now() - t0);
 
-            lastTag = "门控 放行回收（" + reason + "，耗时 " + ms + " ms）";
+            lastTag = "门控 放行（" + reason + "）";
             Debug.Log("[更好的存档] 放行回收：" + reason + "，回收耗时 " + ms + " ms");
-        }
-
-        private static void Popup(long heapMb, long totalMb)
-        {
-            try
-            {
-                ConfirmDialogScreen dlg = Util.KInstantiateUI<ConfirmDialogScreen>(
-                    ScreenPrefabs.Instance.ConfirmDialogScreen.gameObject,
-                    Global.Instance.globalCanvas, true);
-                if (dlg == null)
-                {
-                    Debug.LogError("[更好的存档] 内存告警弹窗实例化失败");
-                    return;
-                }
-                dlg.PopupConfirmDialog(
-                    "托管内存已达本机物理内存的 " + (int)(EmergencyFraction * 100) + "%（"
-                    + heapMb + " MB / " + totalMb + " MB）。\n\n"
-                    + "已立即强制执行一次回收以避免游戏崩溃。建议立刻手动存档并重启游戏。",
-                    delegate { dlg.Deactivate(); },
-                    null, "更好的存档 · 内存告警", null, null, null, "知道了", null);
-            }
-            catch (Exception e)
-            {
-                Debug.LogError("[更好的存档] 内存告警弹窗失败: " + e.GetType().Name + " " + e.Message);
-            }
         }
 
         private static long SafeHeap()
@@ -342,10 +281,10 @@ namespace SaveOpt
 
         internal static string Summary()
         {
-            return "[更好的存档] GC 模式门控：" + detect + " ｜ " + behaviour + " ｜ 进入 " + enters
-                + " 次，放行 " + exits + " 次（暂停 " + byPause + "，阈值 " + byThreshold
-                + "，紧急 " + byEmergency + "，看门狗 " + byWatchdog + "，异常 " + rescued
-                + "）｜ 峰值堆 " + (heapPeak / 1048576) + " MB"
+            return "[更好的存档] GC 释放策略：" + detect + " ｜ " + behaviour + " ｜ 进入 " + enters
+                + " 个周期，放行 " + (byPause + byCycle + byWatchdog + rescued)
+                + " 次（暂停 " + byPause + "，周期末 " + byCycle + "，看门狗 " + byWatchdog
+                + "，异常 " + rescued + "）｜ 峰值堆 " + (heapPeak / 1048576) + " MB"
                 + (lastError.Length > 0 ? "，错误=" + lastError : "");
         }
     }

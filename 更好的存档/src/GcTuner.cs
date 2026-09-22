@@ -121,6 +121,11 @@ namespace SaveOpt
             catch (Exception) { return 0; }
         }
 
+        internal static bool PauseDetectable
+        {
+            get { return instanceProp != null && pausedProp != null; }
+        }
+
         internal static bool IsPaused()
         {
             if (instanceProp == null || pausedProp == null) return false;
