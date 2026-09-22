@@ -27,6 +27,13 @@ namespace SaveOpt
         private static int gcInWindow;
         private static readonly double[] gcOffsets = new double[8];
         private static bool previewCopy;
+        private static double markAt;
+        private static bool markPending;
+        private static double postMs;
+        private static double allowStart;
+        private static double allowMs;
+        private static double deactStart;
+        private static double deactMs;
         private static PropertyInfo captureProp;
         private static bool capturing;
         private static double captureAt;
@@ -66,6 +73,11 @@ namespace SaveOpt
                     Debug.LogWarning("[更好的存档] 找不到 Timelapser.RenderAndPrint，预览图计时段缺失");
                 }
 
+                PatchTimer(harmony, AccessTools.TypeByName("PlayerController"), "AllowDragging",
+                    "AllowDragging_Prefix", "AllowDragging_Postfix", "PlayerController.AllowDragging");
+                PatchTimer(harmony, AccessTools.TypeByName("SaveActive"), "DeactivateSaveIndicator",
+                    "Deactivate_Prefix", "Deactivate_Postfix", "SaveActive.DeactivateSaveIndicator");
+
                 if (tl != null)
                 {
                     captureProp = AccessTools.Property(tl, "CapturingTimelapseScreenshot");
@@ -85,12 +97,41 @@ namespace SaveOpt
             }
         }
 
+        private static void PatchTimer(HarmonyLib.Harmony harmony, Type owner, string name,
+            string prefix, string postfix, string label)
+        {
+            if (owner == null) return;
+            try
+            {
+                MethodInfo m = AccessTools.Method(owner, name);
+                if (m == null)
+                {
+                    Debug.LogWarning("[更好的存档] 找不到 " + label + "，该分项计时缺失");
+                    return;
+                }
+                harmony.Patch(m,
+                    prefix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(FrameWatch), prefix)),
+                    postfix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(FrameWatch), postfix)));
+                Debug.Log("[更好的存档] 存档帧分项计时已挂载：" + label);
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning("[更好的存档] " + label + " 计时挂载失败: " + e.Message);
+            }
+        }
+
         public static void Tick()
         {
             double now = Time.realtimeSinceStartup;
             double gap = now - lastFrame;
             lastFrame = now;
             totalFrames++;
+
+            if (markPending)
+            {
+                postMs = (now - markAt) * 1000.0;
+                markPending = false;
+            }
 
             int c2 = GC.CollectionCount(2);
             if (c2 != lastC2)
@@ -160,6 +201,12 @@ namespace SaveOpt
             lastC2 = GC.CollectionCount(2);
             gcInWindow = 0;
             previewCopy = false;
+            markPending = false;
+            postMs = 0;
+            allowMs = 0;
+            deactMs = 0;
+            allowStart = 0;
+            deactStart = 0;
         }
 
         internal static void NotePreviewCopy()
@@ -170,6 +217,34 @@ namespace SaveOpt
         internal static void Mark(double mainMs)
         {
             saveMs = mainMs;
+            markAt = Time.realtimeSinceStartup;
+            markPending = true;
+        }
+
+        public static void AllowDragging_Prefix()
+        {
+            if (!tracking) return;
+            allowStart = Time.realtimeSinceStartup;
+        }
+
+        public static void AllowDragging_Postfix()
+        {
+            if (!tracking || allowStart <= 0) return;
+            allowMs = (Time.realtimeSinceStartup - allowStart) * 1000.0;
+            allowStart = 0;
+        }
+
+        public static void Deactivate_Prefix()
+        {
+            if (!tracking) return;
+            deactStart = Time.realtimeSinceStartup;
+        }
+
+        public static void Deactivate_Postfix()
+        {
+            if (!tracking || deactStart <= 0) return;
+            deactMs = (Time.realtimeSinceStartup - deactStart) * 1000.0;
+            deactStart = 0;
         }
 
         public static void Preview_Prefix()
@@ -202,7 +277,9 @@ namespace SaveOpt
                 + " 帧（累计 " + totalFrames + "）｜ 主线程存档窗口 " + saveMs.ToString("F0")
                 + " ms ｜ ≥" + (int)ThresholdMs + " ms 的卡顿 " + count + " 段，合计 "
                 + gapTotal.ToString("F0") + " ms，最长 " + gapMax.ToString("F0") + " ms ｜ " + detail
-                + " ｜ 窗口内 Gen2 " + gcs + " ｜ 预览图" + (previewCopy ? "复制复用" : "真实捕获"));
+                + " ｜ 窗口内 Gen2 " + gcs + " ｜ 预览图" + (previewCopy ? "复制复用" : "真实捕获")
+                + " ｜ 窗口结束到下一帧 " + postMs.ToString("F0") + " ms（AllowDragging "
+                + allowMs.ToString("F0") + " ms，停用提示 " + deactMs.ToString("F0") + " ms）");
         }
 
         internal static string Summary()
