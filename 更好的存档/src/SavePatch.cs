@@ -167,6 +167,7 @@ namespace SaveOpt
             if (SerializerPatch.VerifyMode) SerializerPatch.EndVerify("首次存档完成");
             string pngTo;
             string pngFrom = ThumbnailAsync.PreviewCopy(out pngTo, path);
+            if (pngFrom != null) FrameWatch.NotePreviewCopy();
             if (!Sink.Enqueue(head, src, srcLen, path, pngFrom, pngTo)) SaveBuffer.Release(src);
             Debug.Log("[更好的存档] 主线程移交后台：头部 " + ((head == null ? 0 : head.Length) / 1024) + " KB + 未压缩 "
                 + (srcLen / 1048576.0).ToString("F1") + " MB；主线程存档耗时 " + total.ToString("F0") + " ms");

@@ -23,6 +23,10 @@ namespace SaveOpt
         private static readonly double[] gapMs = new double[MaxRecords];
         private static readonly double[] gapAt = new double[MaxRecords];
         private static double previewStart;
+        private static int lastC2;
+        private static int gcInWindow;
+        private static readonly double[] gcOffsets = new double[8];
+        private static bool previewCopy;
         private static PropertyInfo captureProp;
         private static bool capturing;
         private static double captureAt;
@@ -88,6 +92,17 @@ namespace SaveOpt
             lastFrame = now;
             totalFrames++;
 
+            int c2 = GC.CollectionCount(2);
+            if (c2 != lastC2)
+            {
+                if (tracking)
+                {
+                    if (gcInWindow < gcOffsets.Length) gcOffsets[gcInWindow] = now - startAt;
+                    gcInWindow += c2 - lastC2;
+                }
+                lastC2 = c2;
+            }
+
             if (captureProp != null)
             {
                 bool nowCapturing;
@@ -142,6 +157,14 @@ namespace SaveOpt
             gapTotal = 0;
             gapMax = 0;
             saveMs = 0;
+            lastC2 = GC.CollectionCount(2);
+            gcInWindow = 0;
+            previewCopy = false;
+        }
+
+        internal static void NotePreviewCopy()
+        {
+            previewCopy = true;
         }
 
         internal static void Mark(double mainMs)
@@ -169,10 +192,17 @@ namespace SaveOpt
             }
             if (detail.Length == 0) detail = "无";
 
+            string gcs = gcInWindow == 0 ? "无" : (gcInWindow + " 次");
+            for (int i = 0; i < gcInWindow && i < gcOffsets.Length; i++)
+            {
+                gcs += (i > 0 ? "、" : " ") + gcOffsets[i].ToString("F1") + " s";
+            }
+
             Debug.Log("[更好的存档] 体感窗口：自存档开始 " + (int)Window + " s 内逐帧 " + windowFrames
                 + " 帧（累计 " + totalFrames + "）｜ 主线程存档窗口 " + saveMs.ToString("F0")
                 + " ms ｜ ≥" + (int)ThresholdMs + " ms 的卡顿 " + count + " 段，合计 "
-                + gapTotal.ToString("F0") + " ms，最长 " + gapMax.ToString("F0") + " ms ｜ " + detail);
+                + gapTotal.ToString("F0") + " ms，最长 " + gapMax.ToString("F0") + " ms ｜ " + detail
+                + " ｜ 窗口内 Gen2 " + gcs + " ｜ 预览图" + (previewCopy ? "复制复用" : "真实捕获"));
         }
 
         internal static string Summary()
