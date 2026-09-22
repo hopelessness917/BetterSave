@@ -193,6 +193,30 @@ namespace SaveOpt
             Release("异常兜底 堆 " + (heapNow / 1048576) + " MB");
         }
 
+        private static void ReEngage()
+        {
+            if (!supported) return;
+            try
+            {
+                GarbageCollector.GCMode = GarbageCollector.Mode.Disabled;
+                if (GarbageCollector.GCMode != GarbageCollector.Mode.Disabled)
+                {
+                    lastTag = "门控 暂停回收后未能重新按住";
+                    return;
+                }
+                engaged = true;
+                holding = true;
+                engagedAt = Time.realtimeSinceStartup;
+                engagedHeap = SafeHeap();
+                lastTag = "门控 暂停回收后继续按住";
+            }
+            catch (Exception e)
+            {
+                lastError = e.GetType().Name + " " + e.Message;
+                Debug.LogWarning("[更好的存档] 暂停回收后重新按住失败，本周期余下走自然回收: " + lastError);
+            }
+        }
+
         public static void LateUpdate_Postfix()
         {
             if (!supported) return;
@@ -208,8 +232,8 @@ namespace SaveOpt
             if (holding && !releasedThisCycle && GcTuner.IsPaused())
             {
                 byPause++;
-                releasedThisCycle = true;
                 Release("暂停 堆 " + (heapNow / 1048576) + " MB");
+                ReEngage();
                 return;
             }
 
