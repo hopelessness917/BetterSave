@@ -138,7 +138,7 @@ namespace SaveOpt
 
         public static Exception Save_Finalizer(Exception __exception)
         {
-            GcModeGate.ExitForced();
+            if (__exception != null) GcModeGate.ExitForced();
             return __exception;
         }
 

@@ -2,6 +2,7 @@ using System;
 using System.Reflection;
 using HarmonyLib;
 using UnityEngine;
+using UnityEngine.Scripting;
 
 namespace SaveOpt
 {
@@ -140,7 +141,8 @@ namespace SaveOpt
                 if (heapFirst == 0) heapFirst = mb;
                 if (mb > heapMax) heapMax = mb;
                 Debug.Log("[更好的存档] 堆采样 #" + heapSamples + "：" + mb + " MB ｜ 回收计数 0/1/2 = "
-                    + GC.CollectionCount(0) + "/" + GC.CollectionCount(1) + "/" + GC.CollectionCount(2));
+                    + GC.CollectionCount(0) + "/" + GC.CollectionCount(1) + "/" + GC.CollectionCount(2)
+                    + " ｜ GCMode=" + GarbageCollector.GCMode);
             }
 
             if (markPending)
