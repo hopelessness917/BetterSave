@@ -9,6 +9,7 @@ namespace SaveOpt
     internal static class GcModeGate
     {
         private const double StuckSeconds = 30.0;
+        private const int ProbeMb = 64;
 
         private static bool supported;
         private static bool engaged;
@@ -16,6 +17,7 @@ namespace SaveOpt
         private static double engagedAt;
         private static string lastTag = "未使用";
         private static string detect = "未探测";
+        private static string behaviour = "未探测";
         private static string lastError = "";
         private static long enters;
         private static long exits;
@@ -53,24 +55,72 @@ namespace SaveOpt
                 GarbageCollector.Mode mid = GarbageCollector.GCMode;
                 GarbageCollector.GCMode = before;
                 GarbageCollector.Mode after = GarbageCollector.GCMode;
-                supported = mid == GarbageCollector.Mode.Manual && after == before;
                 detect = "初始=" + before + " 置Manual后=" + mid + " 还原后=" + after;
             }
             catch (Exception e)
             {
-                supported = false;
-                detect = "不可用 " + e.GetType().Name + " " + e.Message;
+                detect = "读写失败 " + e.GetType().Name + " " + e.Message;
             }
+
+            bool honoured = false;
+            try
+            {
+                honoured = ProbeDisabled();
+            }
+            catch (Exception e)
+            {
+                behaviour = "行为探测失败 " + e.GetType().Name + " " + e.Message;
+            }
+
+            supported = honoured;
 
             if (supported)
             {
-                Debug.Log("[更好的存档] GC 模式门控探测通过：" + detect
-                    + "。存档窗口内自动回收已被挡住，游戏显式 GC.Collect 不受影响");
+                Debug.Log("[更好的存档] GC 模式门控可用：" + detect + " ｜ " + behaviour
+                    + "。存档窗口内自动回收已被挡住，窗口结束后立即还原");
             }
             else
             {
-                Debug.LogWarning("[更好的存档] GC 模式门控探测失败：" + detect + "。本刀自动停用，其余优化不受影响");
+                Debug.LogWarning("[更好的存档] GC 模式门控不可用：" + detect + " ｜ " + behaviour
+                    + "。本刀自动停用，存档窗口内仍会有一次自动回收，其余优化不受影响");
             }
+        }
+
+        private static int Churn()
+        {
+            byte[][] junk = new byte[ProbeMb][];
+            for (int i = 0; i < ProbeMb; i++) junk[i] = new byte[1048576];
+            junk = null;
+            return GC.CollectionCount(2);
+        }
+
+        private static bool ProbeDisabled()
+        {
+            int base0 = Churn();
+            GC.Collect();
+            int base1 = GC.CollectionCount(2);
+            bool explicitWorks = base1 > base0;
+
+            GarbageCollector.Mode before = GarbageCollector.GCMode;
+            int off0, off1;
+            try
+            {
+                GarbageCollector.GCMode = GarbageCollector.Mode.Disabled;
+                off0 = Churn();
+                GC.Collect();
+                off1 = GC.CollectionCount(2);
+            }
+            finally
+            {
+                GarbageCollector.GCMode = before;
+                GC.Collect();
+            }
+
+            behaviour = "显式回收基线 " + base0 + "->" + base1 + (explicitWorks ? "（有效）" : "（未观测到）")
+                + "；Disabled 下分配 " + ProbeMb + " MB 并显式回收 " + off0 + "->" + off1
+                + (off1 == off0 ? "（被忽略）" : "（仍执行）");
+
+            return explicitWorks && off1 == off0;
         }
 
         internal static void Enter()
@@ -87,11 +137,11 @@ namespace SaveOpt
             try
             {
                 restoreTo = GarbageCollector.GCMode;
-                GarbageCollector.GCMode = GarbageCollector.Mode.Manual;
+                GarbageCollector.GCMode = GarbageCollector.Mode.Disabled;
                 engaged = true;
                 engagedAt = Time.realtimeSinceStartup;
                 enters++;
-                lastTag = "门控 " + restoreTo + "->Manual";
+                lastTag = "门控 " + restoreTo + "->Disabled";
             }
             catch (Exception e)
             {
@@ -99,7 +149,7 @@ namespace SaveOpt
                 supported = false;
                 lastError = e.GetType().Name + " " + e.Message;
                 lastTag = "门控失效";
-                Debug.LogError("[更好的存档] 置为 Manual 失败，本刀永久停用: " + lastError);
+                Debug.LogError("[更好的存档] 置为 Disabled 失败，本刀永久停用: " + lastError);
             }
         }
 
@@ -108,7 +158,7 @@ namespace SaveOpt
             if (!engaged) return;
             string was = restoreTo.ToString();
             Restore();
-            if (supported) lastTag = "门控 Manual->" + was;
+            if (supported) lastTag = "门控 Disabled->" + was;
         }
 
         private static void Restore()
@@ -158,8 +208,9 @@ namespace SaveOpt
 
         internal static string Summary()
         {
-            return "[更好的存档] GC 模式门控：" + detect + " ｜ 进入 " + enters + " 次，恢复 " + exits
-                + " 次，兜底救回 " + rescued + " 次" + (lastError.Length > 0 ? "，错误=" + lastError : "");
+            return "[更好的存档] GC 模式门控：" + detect + " ｜ " + behaviour + " ｜ 进入 " + enters
+                + " 次，恢复 " + exits + " 次，兜底救回 " + rescued
+                + " 次" + (lastError.Length > 0 ? "，错误=" + lastError : "");
         }
     }
 }
