@@ -31,13 +31,12 @@ namespace SaveOpt
         private static bool previewHave;
         private static long previewShrinks;
         private static bool skipThisSave;
-        private static string capturePath;
-        private static volatile Color32[] cachedPixels;
-        private static int cachedW;
-        private static int cachedH;
+        private static string lastPngPath;
+        private static bool haveSource;
         private static long previewCaptures;
         private static long previewSkips;
         private static long previewCopies;
+        private static long previewMisses;
 
         private static readonly object Gate = new object();
         private static readonly Queue<ThumbJob> Queue = new Queue<ThumbJob>();
@@ -131,9 +130,8 @@ namespace SaveOpt
                 harmony.Patch(colony, prefix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(ThumbnailAsync), "SaveColonyPreview_Prefix")));
                 harmony.Patch(refresh, prefix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(ThumbnailAsync), "Refresh_Prefix")));
 
-                Debug.Log("[更好的存档] 预览图只捕获一次：每个存档周期仅在还没有可用画面时做一次真实捕获"
-                    + "（新档第一次存档必做），之后所有存档都用内存里缓存的那张画面重新编码写盘。"
-                    + "缓存放在内存而不是文件，因此自动存档轮转删除旧档也不会让源图失效。"
+                Debug.Log("[更好的存档] 预览图只在开局第一次存档时捕获一次，之后每次存档都直接复制上一周期那张 png。"
+                    + "源是上一周期而不是开局那张，因此永远落在自动存档最近 10 个槽位内，不会被轮转删除。"
                     + "实测捕获开销 1.3-1.4 s 且与分辨率无关（成本在两次完整相机渲染与相机移动触发的全图重新剔除）");
             }
             catch (Exception e)
@@ -146,42 +144,54 @@ namespace SaveOpt
         {
             skipThisSave = false;
 
-            if (cachedPixels != null)
+            string target;
+            try { target = Path.ChangeExtension(__0, ".png"); }
+            catch (Exception) { return true; }
+            if (string.IsNullOrEmpty(target)) return true;
+
+            if (lastPngPath != null)
             {
                 skipThisSave = true;
+                haveSource = File.Exists(lastPngPath);
                 previewSkips++;
                 if (previewSkips == 1)
                 {
-                    Debug.Log("[更好的存档] 预览图捕获已跳过：整个捕获不做，png 由内存缓存的画面重新编码而来");
+                    Debug.Log("[更好的存档] 预览图捕获已跳过：整个捕获不做，直接复制上一周期 "
+                        + Path.GetFileName(lastPngPath));
                 }
                 return false;
             }
 
-            try { capturePath = Path.ChangeExtension(__0, ".png"); }
-            catch (Exception) { capturePath = null; }
+            lastPngPath = target;
             previewCaptures++;
             Debug.Log("[更好的存档] 预览图首次捕获（本局仅此一次）：" + __0);
             return true;
         }
 
-        internal static bool FinishSave(string savePath)
+        internal static string FinishSave(string savePath, out string to)
         {
-            if (!skipThisSave) return false;
+            to = null;
+            if (!skipThisSave) return null;
             skipThisSave = false;
 
-            Color32[] px = cachedPixels;
-            if (px == null) return false;
+            if (!haveSource)
+            {
+                previewMisses++;
+                return null;
+            }
 
-            string to;
             try { to = Path.ChangeExtension(savePath, ".png"); }
-            catch (Exception) { return false; }
-            if (string.IsNullOrEmpty(to)) return false;
+            catch (Exception) { to = null; }
+            if (string.IsNullOrEmpty(to))
+            {
+                previewMisses++;
+                return null;
+            }
 
-            var job = new ThumbJob { Pixels = px, Width = cachedW, Height = cachedH, Path = to };
-            lock (Gate) Queue.Enqueue(job);
-            Signal.Set();
+            string from = lastPngPath;
+            lastPngPath = to;
             previewCopies++;
-            return true;
+            return from;
         }
 
         public static void Refresh_Prefix(Timelapser __instance)
@@ -279,15 +289,6 @@ namespace SaveOpt
             }
 
             job.Path = path;
-            if (capturePath != null && path == capturePath)
-            {
-                cachedW = job.Width;
-                cachedH = job.Height;
-                cachedPixels = job.Pixels;
-                capturePath = null;
-                Debug.Log("[更好的存档] 预览画面已缓存到内存（" + cachedW + " x " + cachedH
-                    + "），本局后续存档不再做真实捕获");
-            }
             lock (Gate) Queue.Enqueue(job);
             Signal.Set();
             return false;
@@ -455,7 +456,7 @@ namespace SaveOpt
                 + " ms；回退 " + fallbacks + " 次"
                 + (mismatch ? " ｜ ★★ 曾出现字节不一致" : " ｜ 首张已与主线程结果逐字节比对通过")
                 + " ｜ 预览图：真实捕获 " + previewCaptures + " 次，跳过捕获 " + previewSkips
-                + " 次，按缓存重新编码写盘 " + previewCopies + " 次";
+                + " 次，复制上一周期 " + previewCopies + " 次，无源图而留空 " + previewMisses + " 次";
         }
     }
 }
