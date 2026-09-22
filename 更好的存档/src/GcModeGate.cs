@@ -13,6 +13,8 @@ namespace SaveOpt
         private const int CheckEveryFrames = 5;
         private static readonly double ForceSeconds = 600.0;
         private static readonly double StuckSeconds = 1800.0;
+        private static readonly double PauseCooldownSeconds = 60.0;
+        private static readonly double MinReleaseGapSeconds = 5.0;
 
         private static bool supported;
         private static bool engaged;
@@ -30,6 +32,8 @@ namespace SaveOpt
         private static long byWatchdog;
         private static long rescued;
         private static double lastCollectAt;
+        private static bool pausePrev;
+        private static long suppressed;
         private static bool warned;
         private static int frameSkip;
         private static long heapNow;
@@ -223,7 +227,12 @@ namespace SaveOpt
             if (++frameSkip < CheckEveryFrames) return;
             frameSkip = 0;
 
-            if (holding && GcTuner.PauseDetectable && GcTuner.IsPaused())
+            bool paused = GcTuner.PauseDetectable && GcTuner.IsPaused();
+            bool freshPause = paused && !pausePrev;
+            pausePrev = paused;
+
+            if (holding && freshPause
+                && Time.realtimeSinceStartup - lastCollectAt >= PauseCooldownSeconds)
             {
                 byPause++;
                 Release("暂停 堆 " + (heapNow / 1048576) + " MB");
@@ -250,6 +259,18 @@ namespace SaveOpt
 
         private static void Release(string reason)
         {
+            double since = Time.realtimeSinceStartup - lastCollectAt;
+            if (lastCollectAt > 0 && since < MinReleaseGapSeconds)
+            {
+                suppressed++;
+                if (suppressed == 1)
+                {
+                    Debug.LogWarning("[更好的存档] 放行被节流：距上次回收仅 " + since.ToString("F1")
+                        + " s（下限 " + MinReleaseGapSeconds + " s），已忽略本次请求：" + reason);
+                }
+                return;
+            }
+
             engaged = false;
             holding = false;
             lastCollectAt = Time.realtimeSinceStartup;
@@ -312,7 +333,7 @@ namespace SaveOpt
             return "[更好的存档] GC 释放策略：" + detect + " ｜ " + behaviour + " ｜ 进入 " + enters
                 + " 个周期，放行 " + (byPause + byForce + byWatchdog + rescued)
                 + " 次（暂停 " + byPause + "，强制 " + byForce + "，看门狗 " + byWatchdog
-                + "，异常 " + rescued + "）｜ 峰值堆 " + (heapPeak / 1048576) + " MB"
+                + "，异常 " + rescued + "，节流 " + suppressed + "）｜ 峰值堆 " + (heapPeak / 1048576) + " MB"
                 + (lastError.Length > 0 ? "，错误=" + lastError : "");
         }
     }
