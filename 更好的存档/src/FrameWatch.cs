@@ -10,6 +10,7 @@ namespace SaveOpt
     {
         private const double Window = 10.0;
         private const double ThresholdMs = 100.0;
+        private const double HitchMs = 250.0;
         private const int MaxRecords = 24;
 
         private static double lastFrame;
@@ -21,6 +22,10 @@ namespace SaveOpt
         private static int count;
         private static double gapTotal;
         private static double gapMax;
+        private static long hitchCount;
+        private static double hitchTotal;
+        private static double hitchMax;
+        private static double lastSaveAt;
         private static readonly double[] gapMs = new double[MaxRecords];
         private static readonly double[] gapAt = new double[MaxRecords];
         private static double previewStart;
@@ -151,6 +156,18 @@ namespace SaveOpt
                 markPending = false;
             }
 
+            if (gap * 1000.0 >= HitchMs)
+            {
+                hitchCount++;
+                hitchTotal += gap * 1000.0;
+                if (gap * 1000.0 > hitchMax) hitchMax = gap * 1000.0;
+                double since = lastSaveAt > 0 ? now - lastSaveAt : -1;
+                Debug.Log("[更好的存档] 全程卡顿 " + (gap * 1000.0).ToString("F0") + " ms ｜ 距上次存档结束 "
+                    + (since < 0 ? "?" : since.ToString("F0")) + " s（越大越说明发生在游玩中）｜ 回收计数 0/1/2 = "
+                    + GC.CollectionCount(0) + "/" + GC.CollectionCount(1) + "/" + GC.CollectionCount(2)
+                    + " ｜ 累计 " + hitchCount + " 次");
+            }
+
             int c2 = GC.CollectionCount(2);
             if (c2 != lastC2)
             {
@@ -236,6 +253,7 @@ namespace SaveOpt
         {
             saveMs = mainMs;
             markAt = Time.realtimeSinceStartup;
+            lastSaveAt = markAt;
             markPending = true;
         }
 
@@ -305,7 +323,8 @@ namespace SaveOpt
             return "[更好的存档] 体感窗口测量：全程逐帧 " + totalFrames + " 帧 ｜ 预览捕获 "
                 + captureCount + " 次，合计 " + captureTotal.ToString("F0") + " ms，最长 "
                 + captureMax.ToString("F0") + " ms ｜ 堆采样 " + heapSamples + " 次，首 "
-                + heapFirst + " MB，峰值 " + heapMax + " MB";
+                + heapFirst + " MB，峰值 " + heapMax + " MB ｜ 全程卡顿 " + hitchCount
+                + " 次，合计 " + hitchTotal.ToString("F0") + " ms，最长 " + hitchMax.ToString("F0") + " ms";
         }
     }
 }
