@@ -144,8 +144,8 @@ namespace SaveOpt
 
         public static void Save_Postfix()
         {
-            GcModeGate.Exit();
             inSave = false;
+            GcModeGate.AfterSave();
             byte[] head = Capture.TakeHead();
             int srcLen;
             byte[] src = Capture.TakeSource(out srcLen);

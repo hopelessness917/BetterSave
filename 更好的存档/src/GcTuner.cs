@@ -115,13 +115,13 @@ namespace SaveOpt
                 + "，阈值=" + (DebtThresholdBytes / 1048576) + " MB，最短间隔=" + (int)MinIntervalSeconds + " s");
         }
 
-        private static long SafeHeap()
+        internal static long SafeHeap()
         {
             try { return GC.GetTotalMemory(false); }
             catch (Exception) { return 0; }
         }
 
-        private static bool IsPaused()
+        internal static bool IsPaused()
         {
             if (instanceProp == null || pausedProp == null) return false;
             object screen = instanceProp.GetValue(null, null);
