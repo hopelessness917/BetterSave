@@ -174,6 +174,15 @@ namespace SaveOpt
                 lastError = e.GetType().Name + " " + e.Message;
                 lastTag = "门控失效";
                 Debug.LogError("[更好的存档] 置为 Disabled 失败，本刀永久停用: " + lastError);
+                try
+                {
+                    if (GarbageCollector.GCMode == GarbageCollector.Mode.Disabled)
+                    {
+                        GarbageCollector.GCMode = GarbageCollector.Mode.Enabled;
+                        Debug.LogWarning("[更好的存档] 置位异常后检测到 Disabled，已还原 Enabled");
+                    }
+                }
+                catch (Exception) { }
             }
         }
 
@@ -187,8 +196,7 @@ namespace SaveOpt
         internal static void ExitForced()
         {
             if (!engaged) return;
-            rescued++;
-            Release("异常兜底 堆 " + (heapNow / 1048576) + " MB");
+            if (Release("异常兜底 堆 " + (heapNow / 1048576) + " MB", true)) rescued++;
         }
 
         private static void ReEngage()
@@ -217,15 +225,17 @@ namespace SaveOpt
 
         public static void LateUpdate_Postfix()
         {
+            if (++frameSkip < CheckEveryFrames) return;
+            frameSkip = 0;
+
+            VerifyReleased();
+
             if (!supported) return;
 
             heapNow = SafeHeap();
             if (heapNow > heapPeak) heapPeak = heapNow;
 
             if (!engaged) return;
-
-            if (++frameSkip < CheckEveryFrames) return;
-            frameSkip = 0;
 
             bool paused = GcTuner.PauseDetectable && GcTuner.IsPaused();
             bool freshPause = paused && !pausePrev;
@@ -234,33 +244,56 @@ namespace SaveOpt
             if (holding && freshPause
                 && Time.realtimeSinceStartup - lastCollectAt >= PauseCooldownSeconds)
             {
-                byPause++;
-                Release("暂停 堆 " + (heapNow / 1048576) + " MB");
-                ReEngage();
+                if (Release("暂停 堆 " + (heapNow / 1048576) + " MB", false))
+                {
+                    byPause++;
+                    ReEngage();
+                }
                 return;
             }
 
-            double idle = Time.realtimeSinceStartup - lastCollectAt;
-            if (idle >= ForceSeconds)
+            if (Time.realtimeSinceStartup - lastCollectAt >= ForceSeconds)
             {
-                byForce++;
-                Release("连续 " + (int)(ForceSeconds / 60) + " 分钟未回收，强制回收 堆 "
-                    + (heapNow / 1048576) + " MB");
-                ReEngage();
+                if (Release("连续 " + (int)(ForceSeconds / 60) + " 分钟未回收，强制回收 堆 "
+                    + (heapNow / 1048576) + " MB", false))
+                {
+                    byForce++;
+                    ReEngage();
+                }
                 return;
             }
 
             if (Time.realtimeSinceStartup - engagedAt > StuckSeconds)
             {
-                byWatchdog++;
-                Release("看门狗超时 " + (int)StuckSeconds + " s 堆 " + (heapNow / 1048576) + " MB");
+                if (Release("看门狗超时 " + (int)StuckSeconds + " s 堆 " + (heapNow / 1048576) + " MB", true))
+                {
+                    byWatchdog++;
+                }
             }
         }
 
-        private static void Release(string reason)
+        private static void VerifyReleased()
+        {
+            if (enters <= 0 || engaged) return;
+            try
+            {
+                if (GarbageCollector.GCMode != GarbageCollector.Mode.Disabled) return;
+                GarbageCollector.GCMode = GarbageCollector.Mode.Enabled;
+                if (GarbageCollector.GCMode == GarbageCollector.Mode.Enabled)
+                {
+                    rescued++;
+                    Debug.LogError("[更好的存档] 检测到门控已判定释放但 GC 模式仍为 Disabled，已强制恢复 Enabled");
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static bool Release(string reason, bool forced)
         {
             double since = Time.realtimeSinceStartup - lastCollectAt;
-            if (lastCollectAt > 0 && since < MinReleaseGapSeconds)
+            if (!forced && lastCollectAt > 0 && since < MinReleaseGapSeconds)
             {
                 suppressed++;
                 if (suppressed == 1)
@@ -268,11 +301,9 @@ namespace SaveOpt
                     Debug.LogWarning("[更好的存档] 放行被节流：距上次回收仅 " + since.ToString("F1")
                         + " s（下限 " + MinReleaseGapSeconds + " s），已忽略本次请求：" + reason);
                 }
-                return;
+                return false;
             }
 
-            engaged = false;
-            holding = false;
             lastCollectAt = Time.realtimeSinceStartup;
 
             try
@@ -280,21 +311,23 @@ namespace SaveOpt
                 GarbageCollector.GCMode = restoreTo;
                 if (GarbageCollector.GCMode != restoreTo)
                 {
-                    supported = false;
-                    lastTag = "门控 还原未生效";
                     Debug.LogError("[更好的存档] 恢复 GC 模式未生效（期望 " + restoreTo + "，实际 "
-                        + GarbageCollector.GCMode + "），本刀永久停用以防堆失控");
-                    return;
+                        + GarbageCollector.GCMode + "），保持 engaged 以便看门狗继续重试");
+                    lastTag = "门控 还原未生效，仍在重试";
+                    return false;
                 }
             }
             catch (Exception e)
             {
                 lastError = e.GetType().Name + " " + e.Message;
-                Debug.LogError("[更好的存档] 恢复 GC 模式失败，强制置 Enabled: " + lastError);
+                Debug.LogError("[更好的存档] 恢复 GC 模式失败，保持 engaged 以便看门狗继续重试: " + lastError);
                 try { GarbageCollector.GCMode = GarbageCollector.Mode.Enabled; }
                 catch (Exception e2) { lastError = e2.GetType().Name + " " + e2.Message; }
-                return;
+                if (GarbageCollector.GCMode == GarbageCollector.Mode.Disabled) return false;
             }
+
+            engaged = false;
+            holding = false;
 
             if (!warned)
             {
@@ -310,6 +343,7 @@ namespace SaveOpt
 
             lastTag = "门控 放行（" + reason + "）";
             Debug.Log("[更好的存档] 放行回收：" + reason + "，回收耗时 " + ms + " ms");
+            return true;
         }
 
         private static long SafeHeap()

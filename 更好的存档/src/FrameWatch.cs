@@ -11,6 +11,7 @@ namespace SaveOpt
         private const double Window = 10.0;
         private const double ThresholdMs = 100.0;
         private const double HitchMs = 250.0;
+        private const long HitchLogCap = 200;
         private const int MaxRecords = 24;
 
         private static double lastFrame;
@@ -38,13 +39,17 @@ namespace SaveOpt
         private static double postMs;
         private static double allowStart;
         private static double allowMs;
+        private static long allowCalls;
+        private static double allowTotal;
         private static double deactStart;
         private static double deactMs;
+        private static long deactCalls;
+        private static double deactTotal;
         private static double lastHeapLog;
         private static long heapSamples;
         private static long heapFirst;
         private static long heapMax;
-        private static PropertyInfo captureProp;
+        private static bool captureWatch;
         private static bool capturing;
         private static double captureAt;
         private static long captureCount;
@@ -88,17 +93,14 @@ namespace SaveOpt
                 PatchTimer(harmony, AccessTools.TypeByName("SaveActive"), "DeactivateSaveIndicator",
                     "Deactivate_Prefix", "Deactivate_Postfix", "SaveActive.DeactivateSaveIndicator");
 
-                if (tl != null)
+                captureWatch = AccessTools.Method(typeof(GameUtil), "IsCapturingTimeLapse") != null;
+                if (captureWatch)
                 {
-                    captureProp = AccessTools.Property(tl, "CapturingTimelapseScreenshot");
-                    if (captureProp != null)
-                    {
-                        Debug.Log("[更好的存档] 预览捕获状态监测已挂载（该状态为真时 CameraController 不处理输入）");
-                    }
-                    else
-                    {
-                        Debug.LogWarning("[更好的存档] 找不到 Timelapser.CapturingTimelapseScreenshot，操作封锁时长度无法测量");
-                    }
+                    Debug.Log("[更好的存档] 预览捕获状态监测已挂载（经 GameUtil.IsCapturingTimeLapse，该状态为真时 CameraController 不处理输入）");
+                }
+                else
+                {
+                    Debug.LogWarning("[更好的存档] 找不到 GameUtil.IsCapturingTimeLapse，预览捕获窗口无法计时");
                 }
             }
             catch (Exception e)
@@ -161,11 +163,18 @@ namespace SaveOpt
                 hitchCount++;
                 hitchTotal += gap * 1000.0;
                 if (gap * 1000.0 > hitchMax) hitchMax = gap * 1000.0;
-                double since = lastSaveAt > 0 ? now - lastSaveAt : -1;
-                Debug.Log("[更好的存档] 全程卡顿 " + (gap * 1000.0).ToString("F0") + " ms ｜ 距上次存档结束 "
-                    + (since < 0 ? "?" : since.ToString("F0")) + " s（越大越说明发生在游玩中）｜ 回收计数 0/1/2 = "
-                    + GC.CollectionCount(0) + "/" + GC.CollectionCount(1) + "/" + GC.CollectionCount(2)
-                    + " ｜ 累计 " + hitchCount + " 次");
+                if (hitchCount <= HitchLogCap)
+                {
+                    double since = lastSaveAt > 0 ? now - lastSaveAt : -1;
+                    Debug.Log("[更好的存档] 全程卡顿 " + (gap * 1000.0).ToString("F0") + " ms ｜ 距上次存档结束 "
+                        + (since < 0 ? "?" : since.ToString("F0")) + " s（越大越说明发生在游玩中）｜ 回收计数 0/1/2 = "
+                        + GC.CollectionCount(0) + "/" + GC.CollectionCount(1) + "/" + GC.CollectionCount(2)
+                        + " ｜ 累计 " + hitchCount + " 次");
+                }
+                else if (hitchCount == HitchLogCap + 1)
+                {
+                    Debug.LogWarning("[更好的存档] 卡顿日志已达上限 " + HitchLogCap + " 条，后续只计数不再逐条打印");
+                }
             }
 
             int c2 = GC.CollectionCount(2);
@@ -179,11 +188,11 @@ namespace SaveOpt
                 lastC2 = c2;
             }
 
-            if (captureProp != null)
+            if (captureWatch)
             {
                 bool nowCapturing;
-                try { nowCapturing = (bool)captureProp.GetValue(null, null); }
-                catch (Exception) { captureProp = null; nowCapturing = false; }
+                try { nowCapturing = GameUtil.IsCapturingTimeLapse(); }
+                catch (Exception) { captureWatch = false; nowCapturing = false; }
 
                 if (nowCapturing && !capturing)
                 {
@@ -266,7 +275,9 @@ namespace SaveOpt
         public static void AllowDragging_Postfix()
         {
             if (!tracking || allowStart <= 0) return;
+            allowCalls++;
             allowMs = (Time.realtimeSinceStartup - allowStart) * 1000.0;
+            allowTotal += allowMs;
             allowStart = 0;
         }
 
@@ -279,7 +290,9 @@ namespace SaveOpt
         public static void Deactivate_Postfix()
         {
             if (!tracking || deactStart <= 0) return;
+            deactCalls++;
             deactMs = (Time.realtimeSinceStartup - deactStart) * 1000.0;
+            deactTotal += deactMs;
             deactStart = 0;
         }
 
@@ -315,7 +328,8 @@ namespace SaveOpt
                 + gapTotal.ToString("F0") + " ms，最长 " + gapMax.ToString("F0") + " ms ｜ " + detail
                 + " ｜ 窗口内 Gen2 " + gcs + " ｜ 预览图" + (previewCopy ? "复制复用" : "真实捕获")
                 + " ｜ 窗口结束到下一帧 " + postMs.ToString("F0") + " ms（AllowDragging "
-                + allowMs.ToString("F0") + " ms，停用提示 " + deactMs.ToString("F0") + " ms）");
+                + allowCalls + " 次/" + allowTotal.ToString("F0") + " ms，停用提示 "
+                + deactCalls + " 次/" + deactTotal.ToString("F0") + " ms）");
         }
 
         internal static string Summary()
