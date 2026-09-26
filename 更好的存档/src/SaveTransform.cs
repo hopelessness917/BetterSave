@@ -11,7 +11,7 @@ namespace SaveOpt
     internal static class SaveTransform
     {
         private const int RequiredVerifiedSaves = 2;
-        private const bool AbMode = true;
+        private const bool AbMode = false;
 
         private const bool RunOriginal = true;
         private const bool SkipOriginal = false;
