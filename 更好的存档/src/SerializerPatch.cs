@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq.Expressions;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using HarmonyLib;
 
 namespace SaveOpt
@@ -82,11 +83,16 @@ namespace SaveOpt
         private static long verified;
         private static long mismatches;
         private static long calls;
+        private static long directCalls;
+
+        private static readonly ConditionalWeakTable<KSerialization.SerializationTemplate, FieldPlan[]> Plans =
+            new ConditionalWeakTable<KSerialization.SerializationTemplate, FieldPlan[]>();
 
         internal static bool VerifyMode { get { return verify; } }
         internal static long Verified { get { return verified; } }
         internal static long Mismatches { get { return mismatches; } }
         internal static long Calls { get { return calls; } }
+        internal static long DirectCalls { get { return directCalls; } }
 
         internal static bool Apply(HarmonyLib.Harmony harmony)
         {
@@ -115,6 +121,29 @@ namespace SaveOpt
             return Body(__instance, obj, writer);
         }
 
+        private static FieldPlan[] PlansFor(KSerialization.SerializationTemplate t)
+        {
+            var fields = t.serializableFields;
+            int n = fields == null ? 0 : fields.Count;
+
+            FieldPlan[] plans;
+            if (Plans.TryGetValue(t, out plans) && plans.Length == n) return plans;
+
+            plans = new FieldPlan[n];
+            for (int i = 0; i < n; i++) plans[i] = FieldPlanner.For(fields[i].field, fields[i].typeInfo);
+
+            Plans.Remove(t);
+            Plans.Add(t, plans);
+            return plans;
+        }
+
+        internal static void WriteTypeless(object obj, BinaryWriter writer)
+        {
+            directCalls++;
+            KSerialization.SerializationTemplate t = KSerialization.Manager.GetSerializationTemplate(obj.GetType());
+            Body(t, obj, writer);
+        }
+
         private static bool Body(KSerialization.SerializationTemplate __instance, object obj, System.IO.BinaryWriter writer)
         {
             if (__instance.onSerializing != null) __instance.onSerializing.Invoke(obj, null);
@@ -123,10 +152,11 @@ namespace SaveOpt
             var fields = __instance.serializableFields;
             if (fields != null)
             {
+                FieldPlan[] plans = PlansFor(__instance);
                 for (int i = 0; i < fields.Count; i++)
                 {
                     KSerialization.SerializationTemplate.SerializationField sf = fields[i];
-                    FieldPlan plan = FieldPlanner.For(sf.field, sf.typeInfo);
+                    FieldPlan plan = plans[i];
                     try
                     {
                         if (plan.Fast != null)
@@ -135,14 +165,12 @@ namespace SaveOpt
                             if (plan.Trusted)
                             {
                                 plan.Fast(obj, writer);
-                                FieldPlanner.NoteFast(plan.Code);
                                 continue;
                             }
                         }
                         object value = plan.Getter(obj);
                         if (check) value = VerifyField(sf.field, obj, value);
                         KSerialization.Helper.WriteValue(writer, sf.typeInfo, value);
-                        FieldPlanner.NoteSlow(plan.Code);
                     }
                     catch (Exception inner)
                     {
@@ -164,7 +192,6 @@ namespace SaveOpt
                         object value2 = Accessors.For(sp.property)(obj);
                         if (check) value2 = VerifyProperty(sp.property, obj, value2);
                         KSerialization.Helper.WriteValue(writer, sp.typeInfo, value2);
-                        FieldPlanner.NoteProperty();
                     }
                     catch (Exception inner2)
                     {
@@ -228,7 +255,8 @@ namespace SaveOpt
 
         internal static string Summary()
         {
-            return "[更好的存档] 第二刀：SerializeData 调用 " + calls + " 次；委托编译 " + Accessors.Compiled
+            return "[更好的存档] 第二刀：SerializeData 调用 " + calls + " 次（其中直调 " + directCalls
+                + " 次，绕开 Harmony 跳板）；委托编译 " + Accessors.Compiled
                 + " 个，回退反射 " + Accessors.Fallback + " 个；双路比对 " + verified + " 次，不一致 " + mismatches + " 次"
                 + (verify ? "（校验仍在进行）" : "（校验已结束）");
         }

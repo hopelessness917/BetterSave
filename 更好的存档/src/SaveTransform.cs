@@ -11,7 +11,7 @@ namespace SaveOpt
     internal static class SaveTransform
     {
         private const int RequiredVerifiedSaves = 2;
-        private const bool AbMode = false;
+        private const bool AbMode = true;
 
         private const bool RunOriginal = true;
         private const bool SkipOriginal = false;
@@ -345,15 +345,8 @@ namespace SaveOpt
 
         private static void WriteBody(Component c, ISaveLoadableDetails details, BinaryWriter w)
         {
-            if (details != null)
-            {
-                KSerialization.Serializer.SerializeTypeless(c, w);
-                details.Serialize(w);
-            }
-            else if (!ReferenceEquals(c, null))
-            {
-                KSerialization.Serializer.SerializeTypeless(c, w);
-            }
+            SerializerPatch.WriteTypeless(c, w);
+            if (details != null) details.Serialize(w);
         }
     }
 }
