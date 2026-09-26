@@ -8,12 +8,12 @@ namespace SaveOpt
 {
     internal static class Prof
     {
-        internal const int Slots = 10;
+        internal const int Slots = 11;
 
         private static readonly string[] labels =
         {
             "PrepSaveFile", "根对象", "SaveSettings", "Sim", "对象区",
-            "分组写", "对象序列化", "类型分派", "Game.Save", "目录"
+            "分组写", "对象序列化", "类型分派", "Game.Save", "目录", "模板查找"
         };
 
         private static readonly string[] mount = new string[Slots];
@@ -80,6 +80,7 @@ namespace SaveOpt
         public static void P7() { Enter(7); }
         public static void P8() { Enter(8); }
         public static void P9() { Enter(9); }
+        public static void P10() { Enter(10); }
 
         public static void Q0() { Leave(0); }
         public static void Q1() { Leave(1); }
@@ -91,6 +92,7 @@ namespace SaveOpt
         public static void Q7() { Leave(7); }
         public static void Q8() { Leave(8); }
         public static void Q9() { Leave(9); }
+        public static void Q10() { Leave(10); }
 
         private static MethodInfo Find(Type owner, string name, Type[] args)
         {
@@ -151,6 +153,7 @@ namespace SaveOpt
             if (Hook(harmony, 7, Find(typeof(KSerialization.Serializer), "SerializeTypeless", new[] { typeof(object), typeof(BinaryWriter) }))) ok++;
             if (Hook(harmony, 8, Find(typeof(Game), "Save", bw))) ok++;
             if (Hook(harmony, 9, Find(typeof(KSerialization.Manager), "SerializeDirectory", bw))) ok++;
+            if (Hook(harmony, 10, Find(typeof(KSerialization.Manager), "GetSerializationTemplate", new[] { typeof(Type) }))) ok++;
 
             mounted = ok > 0;
             string detail = "";
@@ -209,6 +212,7 @@ namespace SaveOpt
                 + " ｜ " + Cell(4) + " ｜ " + Cell(8) + " ｜ " + Cell(9)
                 + " ｜ 未归类 " + (windowMs - top).ToString("F0")
                 + "\n[更好的存档] 对象区内部(ms/次) " + Cell(5) + " ｜ " + Cell(6) + " ｜ " + Cell(7)
+                + " ｜ " + Cell(10)
                 + " ｜ 标签组 " + groupCount + " ｜ 排序键 " + keyCount;
         }
     }
