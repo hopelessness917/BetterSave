@@ -13,26 +13,24 @@ namespace SaveOpt
         private const int CheckEveryFrames = 5;
         private static readonly double ForceSeconds = 600.0;
         private static readonly double StuckSeconds = 1800.0;
-        private static readonly double PauseCooldownSeconds = 60.0;
         private static readonly double MinReleaseGapSeconds = 5.0;
 
         private static bool supported;
         private static bool engaged;
-        private static bool holding;
         private static GarbageCollector.Mode restoreTo = GarbageCollector.Mode.Enabled;
         private static double engagedAt;
         private static long engagedHeap;
         private static string lastTag = "未使用";
         private static string detect = "未探测";
         private static string behaviour = "未探测";
+        private static string gen = "未探测";
+        private static string genVerdict = "未判定";
         private static string lastError = "";
         private static long enters;
-        private static long byPause;
         private static long byForce;
         private static long byWatchdog;
         private static long rescued;
         private static double lastCollectAt;
-        private static bool pausePrev;
         private static long suppressed;
         private static bool warned;
         private static int frameSkip;
@@ -55,10 +53,8 @@ namespace SaveOpt
                 }
                 harmony.Patch(late, postfix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(GcModeGate), "LateUpdate_Postfix")));
                 Debug.Log("[更好的存档] GC 释放策略：整周期按住 Disabled，存档窗口因此恒定不受回收影响；"
-                    + "1) 你按暂停时立刻回收（藏在静止画面里）"
-                    + " 2) 若连续 " + (int)(ForceSeconds / 60) + " 分钟没回收过，则强制回收一次"
-                    + " 3) 看门狗 " + (int)StuckSeconds + " s 仅作机制兜底。暂停检测="
-                    + (GcTuner.PauseDetectable ? "可用" : "不可用，退化为仅按时间强制回收"));
+                    + "唯一放行条件是距上次回收满 " + (int)(ForceSeconds / 60) + " 分钟（暂停不再触发回收），"
+                    + "看门狗 " + (int)StuckSeconds + " s 仅作机制兜底");
                 return true;
             }
             catch (Exception e)
@@ -94,7 +90,18 @@ namespace SaveOpt
                 behaviour = "行为探测失败 " + e.GetType().Name + " " + e.Message;
             }
 
+            try
+            {
+                ProbeGenerations();
+            }
+            catch (Exception e)
+            {
+                gen = "分代探测失败 " + e.GetType().Name + " " + e.Message;
+            }
+
             supported = honoured;
+
+            Debug.Log("[更好的存档] 分代探测：" + gen + " -> " + genVerdict);
 
             if (supported)
             {
@@ -114,6 +121,36 @@ namespace SaveOpt
             for (int i = 0; i < ProbeMb; i++) junk[i] = new byte[1048576];
             junk = null;
             return GC.CollectionCount(2);
+        }
+
+        private static void ProbeGenerations()
+        {
+            Churn();
+            int a0 = GC.CollectionCount(0), a1 = GC.CollectionCount(1), a2 = GC.CollectionCount(2);
+            long ha0 = SafeHeap();
+            double t1 = Now();
+            GC.Collect(1);
+            double ms1 = Now() - t1;
+            int b0 = GC.CollectionCount(0), b1 = GC.CollectionCount(1), b2 = GC.CollectionCount(2);
+            long ha1 = SafeHeap();
+
+            Churn();
+            int c0 = GC.CollectionCount(0), c1 = GC.CollectionCount(1), c2 = GC.CollectionCount(2);
+            long hb0 = SafeHeap();
+            double t2 = Now();
+            GC.Collect();
+            double ms2 = Now() - t2;
+            int d0 = GC.CollectionCount(0), d1 = GC.CollectionCount(1), d2 = GC.CollectionCount(2);
+            long hb1 = SafeHeap();
+
+            gen = "Collect(1) 增量 " + (b0 - a0) + "/" + (b1 - a1) + "/" + (b2 - a2)
+                + "，堆降 " + ((ha0 - ha1) / 1048576) + " MB，耗时 " + ms1.ToString("F0") + " ms"
+                + " ｜ Collect() 增量 " + (d0 - c0) + "/" + (d1 - c1) + "/" + (d2 - c2)
+                + "，堆降 " + ((hb0 - hb1) / 1048576) + " MB，耗时 " + ms2.ToString("F0") + " ms";
+
+            genVerdict = (b2 - a2) < (d2 - c2)
+                ? "★ 分代存在：Collect(1) 未推进第 2 代，可用它做廉价回收"
+                : "分代不存在：Collect(1) 与 Collect() 同样推进三代，后者不可替代";
         }
 
         private static bool ProbeDisabled()
@@ -151,7 +188,6 @@ namespace SaveOpt
 
             if (engaged)
             {
-                holding = true;
                 lastTag = "门控 保持Disabled";
                 return;
             }
@@ -161,7 +197,6 @@ namespace SaveOpt
                 restoreTo = GarbageCollector.GCMode;
                 GarbageCollector.GCMode = GarbageCollector.Mode.Disabled;
                 engaged = true;
-                holding = true;
                 engagedAt = Time.realtimeSinceStartup;
                 if (lastCollectAt <= 0) lastCollectAt = engagedAt;
                 engagedHeap = SafeHeap();
@@ -171,7 +206,6 @@ namespace SaveOpt
             catch (Exception e)
             {
                 engaged = false;
-                holding = false;
                 supported = false;
                 lastError = e.GetType().Name + " " + e.Message;
                 lastTag = "门控失效";
@@ -209,19 +243,18 @@ namespace SaveOpt
                 GarbageCollector.GCMode = GarbageCollector.Mode.Disabled;
                 if (GarbageCollector.GCMode != GarbageCollector.Mode.Disabled)
                 {
-                    lastTag = "门控 暂停回收后未能重新按住";
+                    lastTag = "门控 回收后未能重新按住";
                     return;
                 }
                 engaged = true;
-                holding = true;
                 engagedAt = Time.realtimeSinceStartup;
                 engagedHeap = SafeHeap();
-                lastTag = "门控 暂停回收后继续按住";
+                lastTag = "门控 回收后继续按住";
             }
             catch (Exception e)
             {
                 lastError = e.GetType().Name + " " + e.Message;
-                Debug.LogWarning("[更好的存档] 暂停回收后重新按住失败，本周期余下走自然回收: " + lastError);
+                Debug.LogWarning("[更好的存档] 回收后重新按住失败，本周期余下走自然回收: " + lastError);
             }
         }
 
@@ -238,21 +271,6 @@ namespace SaveOpt
             if (heapNow > heapPeak) heapPeak = heapNow;
 
             if (!engaged) return;
-
-            bool paused = GcTuner.PauseDetectable && GcTuner.IsPaused();
-            bool freshPause = paused && !pausePrev;
-            pausePrev = paused;
-
-            if (holding && freshPause
-                && Time.realtimeSinceStartup - lastCollectAt >= PauseCooldownSeconds)
-            {
-                if (Release("暂停 堆 " + (heapNow / 1048576) + " MB", false))
-                {
-                    byPause++;
-                    ReEngage();
-                }
-                return;
-            }
 
             if (Time.realtimeSinceStartup - lastCollectAt >= ForceSeconds)
             {
@@ -329,7 +347,6 @@ namespace SaveOpt
             }
 
             engaged = false;
-            holding = false;
 
             if (!warned)
             {
@@ -367,9 +384,10 @@ namespace SaveOpt
         internal static string Summary()
         {
             return "[更好的存档] GC 释放策略：" + detect + " ｜ " + behaviour + " ｜ 进入 " + enters
-                + " 个周期，放行 " + (byPause + byForce + byWatchdog + rescued)
-                + " 次（暂停 " + byPause + "，强制 " + byForce + "，看门狗 " + byWatchdog
+                + " 个周期，放行 " + (byForce + byWatchdog + rescued)
+                + " 次（强制 " + byForce + "，看门狗 " + byWatchdog
                 + "，异常 " + rescued + "，节流 " + suppressed + "）｜ 峰值堆 " + (heapPeak / 1048576) + " MB"
+                + " ｜ 分代：" + genVerdict
                 + (lastError.Length > 0 ? "，错误=" + lastError : "");
         }
     }

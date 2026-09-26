@@ -11,10 +11,6 @@ namespace SaveOpt
     {
         private static string env = "未探测";
 
-        private static Type speedType;
-        private static PropertyInfo instanceProp;
-        private static PropertyInfo pausedProp;
-
         private static int c0;
         private static int c1;
         private static int c2;
@@ -38,24 +34,6 @@ namespace SaveOpt
                 env = "探测失败: " + e.GetType().Name + " " + e.Message;
             }
             Diag.Trace("[更好的存档] GC 环境: " + env);
-
-            ResolveApis();
-        }
-
-        private static void ResolveApis()
-        {
-            try
-            {
-                speedType = AccessTools.TypeByName("SpeedControlScreen");
-                if (speedType != null)
-                {
-                    instanceProp = AccessTools.Property(speedType, "Instance");
-                    pausedProp = AccessTools.Property(speedType, "IsPaused");
-                }
-            }
-            catch (Exception) { }
-
-            Diag.Trace("[更好的存档] 暂停检测探测: 可用=" + (instanceProp != null && pausedProp != null));
         }
 
         internal static long SafeHeap()
@@ -67,20 +45,6 @@ namespace SaveOpt
         internal static long HeapMb()
         {
             return SafeHeap() / 1048576;
-        }
-
-        internal static bool PauseDetectable
-        {
-            get { return instanceProp != null && pausedProp != null; }
-        }
-
-        internal static bool IsPaused()
-        {
-            if (instanceProp == null || pausedProp == null) return false;
-            object screen = instanceProp.GetValue(null, null);
-            if (screen == null) return false;
-            object v = pausedProp.GetValue(screen, null);
-            return v is bool && (bool)v;
         }
 
         internal static void BeginSave()
@@ -122,8 +86,7 @@ namespace SaveOpt
 
         internal static string Summary()
         {
-            return "[更好的存档] GC 环境: " + env + " ｜ 存档 " + savesSeen + " 次 ｜ 暂停检测="
-                + (PauseDetectable ? "可用" : "不可用");
+            return "[更好的存档] GC 环境: " + env + " ｜ 存档 " + savesSeen + " 次";
         }
     }
 }
