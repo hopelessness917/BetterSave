@@ -32,6 +32,7 @@ namespace SaveOpt
                 mounted += SavePatch.Apply(harmony) ? "存档管线" : "";
                 mounted += SerializerPatch.Apply(harmony) ? " 序列化委托" : "";
                 mounted += IsDefinedPatch.Apply(harmony) ? " IsDefined缓存" : "";
+                mounted += TypeNameCache.Apply(harmony) ? " 类型名缓存" : "";
                 GcTuner.Apply(harmony);
                 mounted += GcModeGate.Apply(harmony) ? " GC门控" : "";
                 mounted += FrameWatch.Apply(harmony) ? " 体感监控" : "";
@@ -65,6 +66,7 @@ namespace SaveOpt
             Debug.Log(SavePatch.Summary());
             Debug.Log(GcModeGate.Summary());
             Debug.Log(SaveBuffer.Summary());
+            Debug.Log(TypeNameCache.Summary());
             Debug.Log(ThumbnailAsync.Summary());
             if (Diag.Verbose)
             {
