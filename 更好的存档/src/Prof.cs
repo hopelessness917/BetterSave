@@ -8,16 +8,29 @@ namespace SaveOpt
 {
     internal static class Prof
     {
-        internal const int Slots = 11;
+        internal const int Slots = 10;
+        internal const int Cold = 0;
+        internal const int Hot = 1;
 
         private static readonly string[] labels =
         {
             "PrepSaveFile", "根对象", "SaveSettings", "Sim", "对象区",
-            "分组写", "对象序列化", "类型分派", "Game.Save", "目录", "模板查找"
+            "分组写", "对象序列化", "类型分派", "Game.Save", "目录"
+        };
+
+        private static readonly int[] kind =
+        {
+            Cold, Cold, Cold, Cold, Cold, Hot, Hot, Hot, Cold, Cold
+        };
+
+        private static readonly int[] strideMask =
+        {
+            0, 0, 0, 0, 0, 15, 31, 63, 0, 0
         };
 
         private static readonly string[] mount = new string[Slots];
         private static readonly long[] ticks = new long[Slots];
+        private static readonly long[] maxTicks = new long[Slots];
         private static readonly long[] calls = new long[Slots];
         private static readonly long[] sampled = new long[Slots];
         private static readonly int[] depth = new int[Slots];
@@ -26,8 +39,11 @@ namespace SaveOpt
 
         private static FieldInfo sceneField;
         private static FieldInfo keysField;
+        private static FieldInfo managersField;
         private static int groupCount;
         private static int keyCount;
+        private static int managerCount;
+        private static uint rng = 0x9E3779B9u;
         private static bool mounted;
 
         internal static bool Mounted { get { return mounted; } }
@@ -37,6 +53,7 @@ namespace SaveOpt
             for (int i = 0; i < Slots; i++)
             {
                 ticks[i] = 0;
+                maxTicks[i] = 0;
                 calls[i] = 0;
                 sampled[i] = 0;
                 depth[i] = 0;
@@ -44,13 +61,29 @@ namespace SaveOpt
             }
             groupCount = 0;
             keyCount = 0;
+            managerCount = 0;
         }
 
         internal static void Enter(int slot)
         {
             calls[slot]++;
             int d = depth[slot]++;
-            if (d == 0 && (calls[slot] == 1 || (calls[slot] & 63) == 0))
+            if (d != 0) return;
+
+            bool take;
+            if (kind[slot] == Cold) take = true;
+            else
+            {
+                take = false;
+                if (calls[slot] > 64)
+                {
+                    rng ^= rng << 13;
+                    rng ^= rng >> 17;
+                    rng ^= rng << 5;
+                    take = (rng & (uint)strideMask[slot]) == 0;
+                }
+            }
+            if (take)
             {
                 sampleStart[slot] = System.Diagnostics.Stopwatch.GetTimestamp();
                 sampling[slot] = true;
@@ -62,12 +95,13 @@ namespace SaveOpt
             int d = depth[slot] - 1;
             if (d < 0) d = 0;
             depth[slot] = d;
-            if (d == 0 && sampling[slot])
-            {
-                ticks[slot] += System.Diagnostics.Stopwatch.GetTimestamp() - sampleStart[slot];
-                sampled[slot]++;
-                sampling[slot] = false;
-            }
+            if (d != 0 || !sampling[slot]) return;
+
+            long span = System.Diagnostics.Stopwatch.GetTimestamp() - sampleStart[slot];
+            ticks[slot] += span;
+            if (span > maxTicks[slot]) maxTicks[slot] = span;
+            sampled[slot]++;
+            sampling[slot] = false;
         }
 
         public static void P0() { Enter(0); }
@@ -80,7 +114,6 @@ namespace SaveOpt
         public static void P7() { Enter(7); }
         public static void P8() { Enter(8); }
         public static void P9() { Enter(9); }
-        public static void P10() { Enter(10); }
 
         public static void Q0() { Leave(0); }
         public static void Q1() { Leave(1); }
@@ -92,7 +125,6 @@ namespace SaveOpt
         public static void Q7() { Leave(7); }
         public static void Q8() { Leave(8); }
         public static void Q9() { Leave(9); }
-        public static void Q10() { Leave(10); }
 
         private static MethodInfo Find(Type owner, string name, Type[] args)
         {
@@ -140,6 +172,7 @@ namespace SaveOpt
         {
             sceneField = AccessTools.Field(typeof(SaveManager), "sceneObjects");
             keysField = AccessTools.Field(typeof(SaveManager), "orderedKeys");
+            managersField = AccessTools.Field(typeof(SaveLoadRoot), "serializableComponentManagers");
 
             int ok = 0;
             Type[] bw = { typeof(BinaryWriter) };
@@ -153,7 +186,6 @@ namespace SaveOpt
             if (Hook(harmony, 7, Find(typeof(KSerialization.Serializer), "SerializeTypeless", new[] { typeof(object), typeof(BinaryWriter) }))) ok++;
             if (Hook(harmony, 8, Find(typeof(Game), "Save", bw))) ok++;
             if (Hook(harmony, 9, Find(typeof(KSerialization.Manager), "SerializeDirectory", bw))) ok++;
-            if (Hook(harmony, 10, Find(typeof(KSerialization.Manager), "GetSerializationTemplate", new[] { typeof(Type) }))) ok++;
 
             mounted = ok > 0;
             string detail = "";
@@ -166,23 +198,24 @@ namespace SaveOpt
             return mounted;
         }
 
+        private static int Count(object dict)
+        {
+            System.Collections.ICollection c = dict as System.Collections.ICollection;
+            return c == null ? -1 : c.Count;
+        }
+
         internal static void Snapshot()
         {
             try
             {
                 SaveLoader loader = SaveLoader.Instance;
                 object manager = loader == null ? null : (object)loader.saveManager;
-                if (manager == null) return;
-                if (sceneField != null)
+                if (manager != null)
                 {
-                    System.Collections.ICollection c = sceneField.GetValue(manager) as System.Collections.ICollection;
-                    if (c != null) groupCount = c.Count;
+                    if (sceneField != null) groupCount = Count(sceneField.GetValue(manager));
+                    if (keysField != null) keyCount = Count(keysField.GetValue(manager));
                 }
-                if (keysField != null)
-                {
-                    System.Collections.ICollection c = keysField.GetValue(manager) as System.Collections.ICollection;
-                    if (c != null) keyCount = c.Count;
-                }
+                if (managersField != null) managerCount = Count(managersField.GetValue(null));
             }
             catch (Exception e)
             {
@@ -201,19 +234,28 @@ namespace SaveOpt
         {
             if (mount[slot] != "已挂载") return labels[slot] + "=?";
             if (calls[slot] <= 0) return labels[slot] + " 0/0";
-            return labels[slot] + " " + Ms(slot).ToString("F0") + "/" + calls[slot];
+            return labels[slot] + " " + Ms(slot).ToString("F0") + "/" + calls[slot]
+                + "(" + sampled[slot] + ")";
         }
 
         internal static string Report(double windowMs)
         {
             double top = Ms(0) + Ms(1) + Ms(2) + Ms(3) + Ms(4) + Ms(8) + Ms(9);
+            string warn = "";
+            for (int i = 0; i < Slots; i++)
+            {
+                if (mount[i] != "已挂载") continue;
+                if (depth[i] != 0) warn += " " + labels[i] + "深漏" + depth[i];
+                if (kind[i] == Hot && maxTicks[i] * (1000.0 / System.Diagnostics.Stopwatch.Frequency) > 50)
+                    warn += " " + labels[i] + "最大样本>50ms";
+            }
             return "[更好的存档] 窗口分段(ms/次) 窗口 " + windowMs.ToString("F0")
                 + " ｜ " + Cell(0) + " ｜ " + Cell(1) + " ｜ " + Cell(2) + " ｜ " + Cell(3)
                 + " ｜ " + Cell(4) + " ｜ " + Cell(8) + " ｜ " + Cell(9)
                 + " ｜ 未归类 " + (windowMs - top).ToString("F0")
                 + "\n[更好的存档] 对象区内部(ms/次) " + Cell(5) + " ｜ " + Cell(6) + " ｜ " + Cell(7)
-                + " ｜ " + Cell(10)
-                + " ｜ 标签组 " + groupCount + " ｜ 排序键 " + keyCount;
+                + " ｜ 标签组 " + groupCount + " ｜ 排序键 " + keyCount + " ｜ 管理器 " + managerCount
+                + (warn.Length == 0 ? "" : "\n[更好的存档] 探针告警:" + warn);
         }
     }
 }
