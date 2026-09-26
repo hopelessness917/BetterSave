@@ -11,10 +11,16 @@ namespace SaveOpt
     internal static class SaveTransform
     {
         private const int RequiredVerifiedSaves = 2;
-        private const bool AbMode = true;
+        private const bool AbMode = false;
 
         private const bool RunOriginal = true;
         private const bool SkipOriginal = false;
+
+        private sealed class TypeInfo
+        {
+            internal byte[] Name;
+            internal bool Skipped;
+        }
 
         private static Type skipAttr;
         private static FieldInfo managersField;
@@ -40,14 +46,13 @@ namespace SaveOpt
         private static PooledStream scratch;
         private static BinaryWriter scratchWriter;
 
-        private static Type[] typeBuf = new Type[64];
         private static bool[] writeBuf = new bool[64];
         private static ISaveLoadableDetails[] detailBuf = new ISaveLoadableDetails[64];
-        private static byte[][] nameBuf = new byte[64][];
+        private static TypeInfo[] infoBuf = new TypeInfo[64];
 
-        private static readonly Dictionary<Type, byte[]> NameBytes = new Dictionary<Type, byte[]>();
-        private static Type lastNameType;
-        private static byte[] lastNameBytes;
+        private static readonly Dictionary<Type, TypeInfo> Types = new Dictionary<Type, TypeInfo>();
+        private static Type lastType;
+        private static TypeInfo lastInfo;
 
         internal static bool Apply(HarmonyLib.Harmony harmony)
         {
@@ -125,8 +130,8 @@ namespace SaveOpt
                 {
                     enabled = true;
                     Debug.Log("[更好的存档] 序列化替换版已通过 " + verifiedSaves + " 次存档逐字节校验（本次 "
-                        + verifyObjects + " 个对象，最大重入深度 " + maxDepth + "，缓存类型名 "
-                        + NameBytes.Count + " 个），下次存档起接管主线程序列化");
+                        + verifyObjects + " 个对象，最大重入深度 " + maxDepth + "，类型表 "
+                        + Types.Count + " 项），下次存档起接管主线程序列化");
                 }
             }
         }
@@ -144,21 +149,23 @@ namespace SaveOpt
                 + (enabled && AbMode ? "（A/B 交替）" : "")
                 + "，接管 " + takenOver + " 次，最近一次校验对象 " + verifyObjects + " 个，校验通过存档 "
                 + verifiedSaves + " 次，不一致 " + mismatchObjects + " 个对象，异常回退 " + fallbacks
-                + " 次，最大重入深度 " + maxDepth + "，类型名缓存 " + NameBytes.Count + " 个";
+                + " 次，最大重入深度 " + maxDepth + "，类型表 " + Types.Count + " 项";
         }
 
-        private static byte[] NameOf(Type t)
+        private static TypeInfo InfoOf(Type t)
         {
-            if (ReferenceEquals(t, lastNameType)) return lastNameBytes;
-            byte[] b;
-            if (!NameBytes.TryGetValue(t, out b))
+            if (ReferenceEquals(t, lastType)) return lastInfo;
+            TypeInfo info;
+            if (!Types.TryGetValue(t, out info))
             {
-                b = Encoding.UTF8.GetBytes(t.ToString());
-                NameBytes[t] = b;
+                info = new TypeInfo();
+                info.Name = Encoding.UTF8.GetBytes(t.ToString());
+                info.Skipped = t.IsDefined(skipAttr, false);
+                Types[t] = info;
             }
-            lastNameType = t;
-            lastNameBytes = b;
-            return b;
+            lastType = t;
+            lastInfo = info;
+            return info;
         }
 
         public static bool Prefix(SaveLoadRoot __instance, BinaryWriter __0)
@@ -277,12 +284,11 @@ namespace SaveOpt
             if (comps == null) return;
 
             int n = comps.Length;
-            if (typeBuf.Length < n)
+            if (writeBuf.Length < n)
             {
-                typeBuf = new Type[n];
                 writeBuf = new bool[n];
                 detailBuf = new ISaveLoadableDetails[n];
-                nameBuf = new byte[n][];
+                infoBuf = new TypeInfo[n];
             }
 
             int count = 0;
@@ -291,9 +297,9 @@ namespace SaveOpt
                 writeBuf[i] = false;
                 Component c = comps[i];
                 if (ReferenceEquals(c, null)) continue;
-                Type t = c.GetType();
-                if (IsDefinedCache.Check(t, skipAttr, false)) continue;
-                typeBuf[i] = t;
+                TypeInfo info = InfoOf(c.GetType());
+                if (info.Skipped) continue;
+                infoBuf[i] = info;
                 detailBuf[i] = c as ISaveLoadableDetails;
                 writeBuf[i] = true;
                 count++;
@@ -305,7 +311,7 @@ namespace SaveOpt
             {
                 if (!writeBuf[i]) continue;
 
-                byte[] nb = NameOf(typeBuf[i]);
+                byte[] nb = infoBuf[i].Name;
                 w.Write(nb.Length);
                 w.Write(nb, 0, nb.Length);
 
