@@ -108,6 +108,7 @@
     <Compile Include="src\GcModeGate.cs" />
     <Compile Include="src\FrameWatch.cs" />
     <Compile Include="src\ThumbnailAsync.cs" />
+    <Compile Include="src\Prof.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

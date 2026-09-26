@@ -132,6 +132,7 @@ namespace SaveOpt
             GcTuner.BeginSave();
             GcModeGate.Enter();
             FrameWatch.Begin();
+            Prof.Begin();
             SaveWatch.Start = Now();
             Diag.Trace("[更好的存档] 存档开始 " + (isAutoSave ? "自动" : "手动") + " -> " + Path.GetFileName(filename));
         }
@@ -156,6 +157,12 @@ namespace SaveOpt
             saved++;
             lastMs = total;
             FrameWatch.Mark(total);
+
+            if (Prof.Mounted)
+            {
+                Prof.Snapshot();
+                Debug.Log(Prof.Report(total));
+            }
 
             if (src == null || srcLen <= 0)
             {

@@ -36,6 +36,7 @@ namespace SaveOpt
                 mounted += GcModeGate.Apply(harmony) ? " GC门控" : "";
                 mounted += FrameWatch.Apply(harmony) ? " 体感监控" : "";
                 mounted += ThumbnailAsync.Apply(harmony) ? " 缩略图后台" : "";
+                Prof.Apply(harmony);
 
                 MethodInfo quit = AccessTools.Method(typeof(Game), "OnApplicationQuit");
                 if (quit != null)
