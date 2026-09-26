@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
 using KMod;
@@ -27,33 +28,54 @@ namespace SaveOpt
             try
             {
                 Sink.Start();
+                InstallQuitHook(harmony);
 
-                string mounted = "";
-                mounted += SavePatch.Apply(harmony) ? "存档管线" : "";
-                mounted += SerializerPatch.Apply(harmony) ? " 序列化委托" : "";
-                mounted += IsDefinedPatch.Apply(harmony) ? " IsDefined缓存" : "";
+                List<string> mounted = new List<string>();
+                Mount(mounted, "存档管线", SavePatch.Apply, harmony);
+                Mount(mounted, "序列化委托", SerializerPatch.Apply, harmony);
+                Mount(mounted, "IsDefined缓存", IsDefinedPatch.Apply, harmony);
+                Mount(mounted, "GC门控", GcModeGate.Apply, harmony);
+                Mount(mounted, "体感监控", FrameWatch.Apply, harmony);
+                Mount(mounted, "缩略图后台", ThumbnailAsync.Apply, harmony);
+                Mount(mounted, "序列化替换", SaveTransform.Apply, harmony);
                 GcTuner.Apply(harmony);
-                mounted += GcModeGate.Apply(harmony) ? " GC门控" : "";
-                mounted += FrameWatch.Apply(harmony) ? " 体感监控" : "";
-                mounted += ThumbnailAsync.Apply(harmony) ? " 缩略图后台" : "";
-                mounted += SaveTransform.Apply(harmony) ? " 序列化替换" : "";
 
-                MethodInfo quit = AccessTools.Method(typeof(Game), "OnApplicationQuit");
-                if (quit != null)
-                {
-                    harmony.Patch(quit, prefix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(ModLoader), "OnApplicationQuit_Prefix")));
-                }
-                else
-                {
-                    Debug.LogWarning("[更好的存档] 找不到 Game.OnApplicationQuit，退出前可能丢失未落盘的存档");
-                }
-
-                Debug.Log("[更好的存档] 已加载（" + mounted.Trim() + "）"
+                Debug.Log("[更好的存档] 已加载（" + string.Join(" ", mounted.ToArray()) + "）"
                     + (Diag.Verbose ? " ｜ 诊断日志=开" : ""));
             }
             catch (Exception e)
             {
                 Debug.LogError("[更好的存档] OnLoad 失败: " + e);
+            }
+        }
+
+        private static void Mount(List<string> list, string name, Func<HarmonyLib.Harmony, bool> apply, HarmonyLib.Harmony harmony)
+        {
+            try
+            {
+                if (apply(harmony)) list.Add(name);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError("[更好的存档] " + name + " 挂载失败，其余组件继续运行: " + e);
+            }
+        }
+
+        private static void InstallQuitHook(HarmonyLib.Harmony harmony)
+        {
+            try
+            {
+                MethodInfo quit = AccessTools.Method(typeof(Game), "OnApplicationQuit");
+                if (quit == null)
+                {
+                    Debug.LogWarning("[更好的存档] 找不到 Game.OnApplicationQuit，退出前可能丢失未落盘的存档");
+                    return;
+                }
+                harmony.Patch(quit, prefix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(ModLoader), "OnApplicationQuit_Prefix")));
+            }
+            catch (Exception e)
+            {
+                Debug.LogError("[更好的存档] 退出钩子挂载失败: " + e);
             }
         }
 

@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
-using System.Reflection.Emit;
 using HarmonyLib;
 using UnityEngine;
 
@@ -61,7 +60,7 @@ namespace SaveOpt
             scratchWriter = new BinaryWriter(scratch);
 
             harmony.Patch(target,
-                transpiler: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(SaveTransform), "Transpile")),
+                prefix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(SaveTransform), "Prefix")),
                 postfix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(SaveTransform), "After")));
             Debug.Log("[更好的存档] 序列化替换已挂载（首次存档逐字节校验通过后接管）");
             return true;
@@ -125,28 +124,10 @@ namespace SaveOpt
                 + " 次，不一致 " + mismatchObjects + " 个对象/" + mismatchSaves + " 次存档，异常回退 " + fallbacks + " 次";
         }
 
-        public static IEnumerable<CodeInstruction> Transpile(IEnumerable<CodeInstruction> instructions)
+        public static bool Prefix(SaveLoadRoot __instance, BinaryWriter __0)
         {
-            MethodInfo tryCall = AccessTools.Method(typeof(SaveTransform), "Try");
-            var list = new List<CodeInstruction>(instructions);
-            if (tryCall == null || list.Count == 0)
-            {
-                Debug.LogError("[更好的存档] 序列化替换前置补丁无法生成，放弃");
-                return instructions;
-            }
-
-            var result = new List<CodeInstruction>(list.Count + 5);
-            result.Add(new CodeInstruction(OpCodes.Ldarg_0));
-            result.Add(new CodeInstruction(OpCodes.Ldarg_1));
-            result.Add(new CodeInstruction(OpCodes.Call, tryCall));
-            result.Add(new CodeInstruction(OpCodes.Brfalse, list[0]));
-            result.Add(new CodeInstruction(OpCodes.Ret));
-            result.AddRange(list);
-            return result;
-        }
-
-        public static bool Try(SaveLoadRoot root, BinaryWriter writer)
-        {
+            SaveLoadRoot root = __instance;
+            BinaryWriter writer = __0;
             pending = false;
             try
             {
