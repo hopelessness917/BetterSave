@@ -46,17 +46,28 @@ namespace SaveOpt
             if (offset < 0 || count < 0 || offset + count > buffer.Length)
                 throw new ArgumentException("offset/count");
             if (count == 0) return;
-            Ensure(pos + count);
-            Buffer.BlockCopy(buffer, offset, buf, pos, count);
-            pos += count;
-            if (pos > len) len = pos;
+            int need = pos + count;
+            if (need > buf.Length) Ensure(need);
+            if (count <= 8)
+            {
+                int i = count;
+                while (--i >= 0) buf[pos + i] = buffer[offset + i];
+            }
+            else
+            {
+                Buffer.BlockCopy(buffer, offset, buf, pos, count);
+            }
+            pos = need;
+            if (need > len) len = need;
         }
 
         public override void WriteByte(byte value)
         {
-            Ensure(pos + 1);
-            buf[pos++] = value;
-            if (pos > len) len = pos;
+            int need = pos + 1;
+            if (need > buf.Length) Ensure(need);
+            buf[pos] = value;
+            pos = need;
+            if (need > len) len = need;
         }
 
         public override int Read(byte[] buffer, int offset, int count)
