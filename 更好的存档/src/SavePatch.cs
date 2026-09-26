@@ -131,7 +131,6 @@ namespace SaveOpt
             inSave = true;
             GcTuner.BeginSave();
             GcModeGate.Enter();
-            TypeNameCache.BeginSave();
             FrameWatch.Begin();
             SaveWatch.Start = Now();
             Diag.Trace("[更好的存档] 存档开始 " + (isAutoSave ? "自动" : "手动") + " -> " + Path.GetFileName(filename));
@@ -172,8 +171,7 @@ namespace SaveOpt
 
             Debug.Log("[更好的存档] 存档 #" + saved + " " + (isAuto ? "自动" : "手动") + " -> "
                 + Path.GetFileName(path) + " ｜ 主线程 " + total.ToString("F0") + " ms ｜ 未压缩 "
-                + (srcLen / 1048576.0).ToString("F1") + " MB ｜ 堆 " + GcTuner.HeapMb() + " MB"
-                + " ｜ 类型名缓存 " + (TypeNameCache.Bypass ? "关（对照）" : "开"));
+                + (srcLen / 1048576.0).ToString("F1") + " MB ｜ 堆 " + GcTuner.HeapMb() + " MB");
 
             if (Diag.Verbose)
             {
