@@ -9,7 +9,10 @@ namespace SaveOpt
 {
     internal static class SaveTransform
     {
-        private const int MinVerifiedObjects = 20000;
+        private const int RequiredVerifiedSaves = 2;
+
+        private const bool RunOriginal = true;
+        private const bool SkipOriginal = false;
 
         private static Type skipAttr;
         private static FieldInfo managersField;
@@ -20,9 +23,10 @@ namespace SaveOpt
         private static long takenOver;
         private static long verifyObjects;
         private static long mismatchObjects;
-        private static long mismatchSaves;
         private static long fallbacks;
         private static int verifiedSaves;
+        private static int depth;
+        private static int maxDepth;
 
         private static bool pending;
         private static long pendingPos;
@@ -69,7 +73,9 @@ namespace SaveOpt
         internal static void BeginSave()
         {
             mismatchObjects = 0;
+            verifyObjects = 0;
             pending = false;
+            depth = 0;
 
             registryEmpty = false;
             try
@@ -92,22 +98,20 @@ namespace SaveOpt
 
         internal static void EndSave()
         {
-            if (disabled || enabled)
-            {
-                pending = false;
-                return;
-            }
+            depth = 0;
+            pending = false;
+            if (disabled || enabled) return;
+
             if (mismatchObjects == 0 && verifyObjects > 0)
             {
                 verifiedSaves++;
-                if (verifyObjects >= MinVerifiedObjects || verifiedSaves >= 3)
+                if (verifiedSaves >= RequiredVerifiedSaves)
                 {
                     enabled = true;
-                    Debug.Log("[更好的存档] 序列化替换版已通过逐字节校验（本次存档 " + verifyObjects
-                        + " 个对象，累计 " + verifiedSaves + " 次），下次存档起接管主线程序列化");
+                    Debug.Log("[更好的存档] 序列化替换版已通过 " + verifiedSaves + " 次存档逐字节校验（本次 "
+                        + verifyObjects + " 个对象，最大重入深度 " + maxDepth + "），下次存档起接管主线程序列化");
                 }
             }
-            verifyObjects = 0;
         }
 
         internal static string Status()
@@ -120,54 +124,54 @@ namespace SaveOpt
         internal static string Summary()
         {
             return "[更好的存档] 序列化替换：模式 " + (disabled ? "已停用" : enabled ? "已接管" : "校验中")
-                + "，接管 " + takenOver + " 次，校验对象 " + verifyObjects + " 个，校验存档 " + verifiedSaves
-                + " 次，不一致 " + mismatchObjects + " 个对象/" + mismatchSaves + " 次存档，异常回退 " + fallbacks + " 次";
+                + "，接管 " + takenOver + " 次，最近一次校验对象 " + verifyObjects + " 个，校验通过存档 "
+                + verifiedSaves + " 次，不一致 " + mismatchObjects + " 个对象，异常回退 " + fallbacks
+                + " 次，最大重入深度 " + maxDepth;
         }
 
         public static bool Prefix(SaveLoadRoot __instance, BinaryWriter __0)
         {
-            SaveLoadRoot root = __instance;
-            BinaryWriter writer = __0;
+            depth++;
+            if (depth > maxDepth) maxDepth = depth;
+
+            if (depth != 1) return RunOriginal;
+            if (disabled || !registryEmpty) return RunOriginal;
+            if (ReferenceEquals(__instance, null) || __0 == null) return RunOriginal;
+
+            PooledStream real = __0.BaseStream as PooledStream;
+
+            if (enabled)
+            {
+                if (real == null) return RunOriginal;
+                long start = real.Position;
+                try
+                {
+                    Rewrite(__instance, __0, real);
+                    takenOver++;
+                    return SkipOriginal;
+                }
+                catch (Exception e)
+                {
+                    real.SetLength(start);
+                    real.Position = start;
+                    disabled = true;
+                    fallbacks++;
+                    Debug.LogError("[更好的存档] 序列化替换版抛异常，本次已回退到原版并永久停用替换: " + e);
+                    return RunOriginal;
+                }
+            }
+
+            if (real == null) return RunOriginal;
+
             pending = false;
             try
             {
-                if (disabled || !registryEmpty) return false;
-                if (ReferenceEquals(root, null) || writer == null) return false;
-
-                PooledStream real = writer.BaseStream as PooledStream;
-
-                if (enabled)
-                {
-                    long start = real == null ? 0 : real.Position;
-                    try
-                    {
-                        Rewrite(root, writer, real);
-                        takenOver++;
-                        return true;
-                    }
-                    catch (Exception e)
-                    {
-                        if (real != null)
-                        {
-                            real.SetLength(start);
-                            real.Position = start;
-                        }
-                        disabled = true;
-                        fallbacks++;
-                        Debug.LogError("[更好的存档] 序列化替换版抛异常，本次已回退到原版并永久停用替换: " + e);
-                        return false;
-                    }
-                }
-
-                if (real == null) return false;
-
                 scratch.SetLength(0);
                 scratch.Position = 0;
-                Rewrite(root, scratchWriter, scratch);
+                Rewrite(__instance, scratchWriter, scratch);
                 pendingLen = (int)scratch.Length;
                 pendingPos = real.Position;
                 pending = true;
-                return false;
             }
             catch (Exception e)
             {
@@ -175,14 +179,17 @@ namespace SaveOpt
                 disabled = true;
                 fallbacks++;
                 Debug.LogError("[更好的存档] 序列化替换版校验期异常，永久停用替换: " + e);
-                return false;
             }
+            return RunOriginal;
         }
 
         public static void After(BinaryWriter __0)
         {
-            if (!pending) return;
+            int d = depth;
+            depth = d > 0 ? d - 1 : 0;
+            if (d != 1 || !pending) return;
             pending = false;
+
             try
             {
                 if (__0 == null) return;
@@ -219,10 +226,9 @@ namespace SaveOpt
         private static void Fail(string detail)
         {
             mismatchObjects++;
-            mismatchSaves++;
             disabled = true;
             Debug.LogError("[更好的存档] 序列化替换版与原版输出不一致：" + detail
-                + "，永久停用替换（本次存档仍由原版写出，安全）");
+                + "，永久停用替换。校验期间真实数据始终由原版写出，未受影响");
         }
 
         private static void FailSafe(Exception e)
