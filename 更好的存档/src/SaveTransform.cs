@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
+using System.Text;
 using HarmonyLib;
 using UnityEngine;
 
@@ -10,6 +11,7 @@ namespace SaveOpt
     internal static class SaveTransform
     {
         private const int RequiredVerifiedSaves = 2;
+        private const bool AbMode = true;
 
         private const bool RunOriginal = true;
         private const bool SkipOriginal = false;
@@ -20,6 +22,8 @@ namespace SaveOpt
         private static bool enabled;
         private static bool disabled;
         private static bool warnedRegistry;
+        private static bool useRewrite;
+        private static int armIndex;
         private static long takenOver;
         private static long verifyObjects;
         private static long mismatchObjects;
@@ -39,6 +43,11 @@ namespace SaveOpt
         private static Type[] typeBuf = new Type[64];
         private static bool[] writeBuf = new bool[64];
         private static ISaveLoadableDetails[] detailBuf = new ISaveLoadableDetails[64];
+        private static byte[][] nameBuf = new byte[64][];
+
+        private static readonly Dictionary<Type, byte[]> NameBytes = new Dictionary<Type, byte[]>();
+        private static Type lastNameType;
+        private static byte[] lastNameBytes;
 
         internal static bool Apply(HarmonyLib.Harmony harmony)
         {
@@ -66,7 +75,7 @@ namespace SaveOpt
             harmony.Patch(target,
                 prefix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(SaveTransform), "Prefix")),
                 postfix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(SaveTransform), "After")));
-            Debug.Log("[更好的存档] 序列化替换已挂载（首次存档逐字节校验通过后接管）");
+            Debug.Log("[更好的存档] 序列化替换已挂载（校验通过后接管；A/B 交替=" + (AbMode ? "开" : "关") + "）");
             return true;
         }
 
@@ -76,6 +85,13 @@ namespace SaveOpt
             verifyObjects = 0;
             pending = false;
             depth = 0;
+            useRewrite = false;
+
+            if (enabled)
+            {
+                armIndex++;
+                useRewrite = !AbMode || (armIndex % 2) == 1;
+            }
 
             registryEmpty = false;
             try
@@ -109,7 +125,8 @@ namespace SaveOpt
                 {
                     enabled = true;
                     Debug.Log("[更好的存档] 序列化替换版已通过 " + verifiedSaves + " 次存档逐字节校验（本次 "
-                        + verifyObjects + " 个对象，最大重入深度 " + maxDepth + "），下次存档起接管主线程序列化");
+                        + verifyObjects + " 个对象，最大重入深度 " + maxDepth + "，缓存类型名 "
+                        + NameBytes.Count + " 个），下次存档起接管主线程序列化");
                 }
             }
         }
@@ -117,16 +134,31 @@ namespace SaveOpt
         internal static string Status()
         {
             if (disabled) return "替换版 已停用";
-            if (enabled) return "替换版 已接管(" + takenOver + ")";
-            return "替换版 校验中(" + verifyObjects + "对象)";
+            if (!enabled) return "替换版 校验中(" + verifyObjects + "对象)";
+            return useRewrite ? "替换版 开(本轮" + takenOver + ")" : "替换版 关";
         }
 
         internal static string Summary()
         {
             return "[更好的存档] 序列化替换：模式 " + (disabled ? "已停用" : enabled ? "已接管" : "校验中")
+                + (enabled && AbMode ? "（A/B 交替）" : "")
                 + "，接管 " + takenOver + " 次，最近一次校验对象 " + verifyObjects + " 个，校验通过存档 "
                 + verifiedSaves + " 次，不一致 " + mismatchObjects + " 个对象，异常回退 " + fallbacks
-                + " 次，最大重入深度 " + maxDepth;
+                + " 次，最大重入深度 " + maxDepth + "，类型名缓存 " + NameBytes.Count + " 个";
+        }
+
+        private static byte[] NameOf(Type t)
+        {
+            if (ReferenceEquals(t, lastNameType)) return lastNameBytes;
+            byte[] b;
+            if (!NameBytes.TryGetValue(t, out b))
+            {
+                b = Encoding.UTF8.GetBytes(t.ToString());
+                NameBytes[t] = b;
+            }
+            lastNameType = t;
+            lastNameBytes = b;
+            return b;
         }
 
         public static bool Prefix(SaveLoadRoot __instance, BinaryWriter __0)
@@ -142,6 +174,7 @@ namespace SaveOpt
 
             if (enabled)
             {
+                if (!useRewrite) return RunOriginal;
                 if (real == null) return RunOriginal;
                 long start = real.Position;
                 try
@@ -249,6 +282,7 @@ namespace SaveOpt
                 typeBuf = new Type[n];
                 writeBuf = new bool[n];
                 detailBuf = new ISaveLoadableDetails[n];
+                nameBuf = new byte[n][];
             }
 
             int count = 0;
@@ -270,7 +304,10 @@ namespace SaveOpt
             for (int i = 0; i < n; i++)
             {
                 if (!writeBuf[i]) continue;
-                KSerialization.IOHelper.WriteKleiString(w, typeBuf[i].ToString());
+
+                byte[] nb = NameOf(typeBuf[i]);
+                w.Write(nb.Length);
+                w.Write(nb, 0, nb.Length);
 
                 if (ps != null)
                 {
