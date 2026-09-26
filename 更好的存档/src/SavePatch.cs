@@ -132,7 +132,7 @@ namespace SaveOpt
             GcTuner.BeginSave();
             GcModeGate.Enter();
             FrameWatch.Begin();
-            Prof.Begin();
+            SaveTransform.BeginSave();
             SaveWatch.Start = Now();
             Diag.Trace("[更好的存档] 存档开始 " + (isAutoSave ? "自动" : "手动") + " -> " + Path.GetFileName(filename));
         }
@@ -157,12 +157,7 @@ namespace SaveOpt
             saved++;
             lastMs = total;
             FrameWatch.Mark(total);
-
-            if (Prof.Mounted)
-            {
-                Prof.Snapshot();
-                Debug.Log(Prof.Report(total));
-            }
+            SaveTransform.EndSave();
 
             if (src == null || srcLen <= 0)
             {
@@ -178,7 +173,8 @@ namespace SaveOpt
 
             Debug.Log("[更好的存档] 存档 #" + saved + " " + (isAuto ? "自动" : "手动") + " -> "
                 + Path.GetFileName(path) + " ｜ 主线程 " + total.ToString("F0") + " ms ｜ 未压缩 "
-                + (srcLen / 1048576.0).ToString("F1") + " MB ｜ 堆 " + GcTuner.HeapMb() + " MB");
+                + (srcLen / 1048576.0).ToString("F1") + " MB ｜ 堆 " + GcTuner.HeapMb() + " MB ｜ "
+                + SaveTransform.Status());
 
             if (Diag.Verbose)
             {

@@ -36,7 +36,7 @@ namespace SaveOpt
                 mounted += GcModeGate.Apply(harmony) ? " GC门控" : "";
                 mounted += FrameWatch.Apply(harmony) ? " 体感监控" : "";
                 mounted += ThumbnailAsync.Apply(harmony) ? " 缩略图后台" : "";
-                Prof.Apply(harmony);
+                mounted += SaveTransform.Apply(harmony) ? " 序列化替换" : "";
 
                 MethodInfo quit = AccessTools.Method(typeof(Game), "OnApplicationQuit");
                 if (quit != null)
@@ -67,6 +67,7 @@ namespace SaveOpt
             Debug.Log(GcModeGate.Summary());
             Debug.Log(SaveBuffer.Summary());
             Debug.Log(ThumbnailAsync.Summary());
+            Debug.Log(SaveTransform.Summary());
             if (Diag.Verbose)
             {
                 Debug.Log(SerializerPatch.Summary());
