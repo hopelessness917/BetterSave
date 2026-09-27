@@ -96,13 +96,32 @@ Game.Instance.Save(w)
 - **Harmony 的 `CodeInstruction` 不能当分支操作数**（`Unexpected unemittable operand type`）。
   
 **一位大佬建议测试**
-
+自动保存SaveLoader.Save 卡是末尾GC.Collect()引起
+GC.Collect()运行会暂停所有托管线程
+可以把他干掉还能提上或者 换成GC.Collect(1)只回收Gen0、Gen1
+我这里测试 干掉GC.Collect() 截图也很顺畅
+经过检测探针测试发现
 - `GC.Collect(1)` 与 `GC.Collect()` **完全等价**：增量 1/1/1、堆降 64/64 MB、耗时 8–9 ms。
   `CollectionCount(0/1/2)` 全程恒等——**这一作的 Mono 在编译期就关掉了分代**。
 - `GarbageCollector.Mode.Manual` 在非增量 Boehm 上是 **no-op**；`Mode.Disabled` 才真正停掉托管回收。
 - Boehm 的触发是**分配驱动**（约每 250 MB 一次），不是堆驱动。
 - 缺氧自身**没有设任何内存阈值**：`Assembly-CSharp` 里 0 处 `GC.GetTotalMemory`，
   6 处 `GC.Collect()` 全是事件驱动。
+
+**新的建议**
+GCMode = Disabled 手动管理对低内存用户风险比较高。我是 32G，游玩时除了自动存档，反倒没感知到明显区别。
+建议：
+1.在 Mod 选项里加个开关，默认“自动”，手动作为高级选项，并加警告。
+2.加一个 gc-max-time-slice 下拉框 1–6，默认 3，写入 boot.config，提示需要重启游戏生效。
+3. 加一个开关 在自动保存期间是否截图
+可以区分下手动保存自动保存，
+手动保存默认自动截图 手动保存感知不大 因为是个长久存档还是有用的
+自动保存只是个临时 确实截图意义不大
+我测试 截图0.1 意义不大 0.5比较合适
+
+上传代码到github并添加他协作
+测试他的dll：https://github.com/wuguo13842/-/releases/tag/%E9%A2%84%E8%A7%88
+
 
 **性能测量方法（比较靠谱）**
 
