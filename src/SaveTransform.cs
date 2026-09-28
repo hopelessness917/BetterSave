@@ -178,7 +178,7 @@ namespace SaveOpt
 
             if (depth != 1) return RunOriginal;
             if (disabled || !registryEmpty) return RunOriginal;
-            if (ReferenceEquals(__instance, null) || __0 == null) return RunOriginal;
+            if (__instance == null || __0 == null) return RunOriginal;
 
             PooledStream real = __0.BaseStream as PooledStream;
 
@@ -302,7 +302,7 @@ namespace SaveOpt
             {
                 writeBuf[i] = false;
                 Component c = components[i];
-                if (ReferenceEquals(c, null)) continue;
+				if (c == null) continue;
                 TypeInfo info = InfoOf(c.GetType());
                 if (info.Skipped) continue;
                 infoBuf[i] = info;
