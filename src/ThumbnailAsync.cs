@@ -5,8 +5,10 @@ using System.Reflection;
 using System.Reflection.Emit;
 using System.Threading;
 using HarmonyLib;
+using Unity.Collections;
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
+using UnityEngine.Rendering;
 
 namespace SaveOpt
 {
@@ -21,22 +23,27 @@ namespace SaveOpt
 
     internal static class ThumbnailAsync
     {
-        private const float PreviewScale = 0.1f;
+        private const float PreviewScale = 0.5f;
+
+        // AsyncGPUReadback 返回的数据行序：D3D 自上而下（false），OpenGL 自下而上（true）
+        private const bool FlipRowsForPNG = false;
 
         private static readonly byte[] Sentinel = new byte[0];
 
         private static AccessTools.FieldRef<Timelapser, Vector2Int> previewRes;
+        private static AccessTools.FieldRef<Timelapser, bool> previewScreenshotField;
+        private static AccessTools.FieldRef<Timelapser, string> previewSaveGamePathField;
+        private static AccessTools.FieldRef<Timelapser, RenderTexture> bufferRenderTextureField;
         private static Vector2Int previewOriginal;
         private static Vector2Int previewApplied;
         private static bool previewHave;
         private static long previewShrinks;
-        private static bool skipThisSave;
-        private static string lastPngPath;
-        private static bool haveSource;
         private static long previewCaptures;
         private static long previewSkips;
-        private static long previewCopies;
-        private static long previewMisses;
+
+        private static long asyncRequests;
+        private static long asyncCompleted;
+        private static long asyncFailed;
 
         private static readonly object Gate = new object();
         private static readonly Queue<ThumbJob> Queue = new Queue<ThumbJob>();
@@ -71,21 +78,27 @@ namespace SaveOpt
                 return false;
             }
 
-            int swapped = 0;
             try
             {
-                harmony.Patch(target, transpiler: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(ThumbnailAsync), "Transpile")));
-                swapped = swappedInjected;
+                previewScreenshotField = AccessTools.FieldRefAccess<Timelapser, bool>("previewScreenshot");
+                previewSaveGamePathField = AccessTools.FieldRefAccess<Timelapser, string>("previewSaveGamePath");
             }
             catch (Exception e)
             {
-                Debug.LogError("[更好的存档] 缩略图 transpiler 挂载失败: " + e.Message);
-                return false;
+                Debug.LogWarning("[更好的存档] 无法访问 Timelapser 私有字段，AsyncGPUReadback 路径不可用: " + e.Message);
+                previewScreenshotField = null;
+                previewSaveGamePathField = null;
             }
 
-            if (swapped != 1)
+            try
             {
-                Debug.LogError("[更好的存档] 缩略图替换点数量异常（" + swapped + "），缩略图后台化未启用");
+                harmony.Patch(target,
+                    prefix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(ThumbnailAsync), "WriteToPng_Prefix")),
+                    transpiler: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(ThumbnailAsync), "Transpile")));
+            }
+            catch (Exception e)
+            {
+                Debug.LogError("[更好的存档] WriteToPng 补丁挂载失败: " + e.Message);
                 return false;
             }
 
@@ -103,8 +116,15 @@ namespace SaveOpt
 
             Start();
             enabled = true;
-            Diag.Trace("[更好的存档] 缩略图 PNG 编码已移入后台（EncodeToPNG -> EncodeArrayToPNG + 独立线程；"
-                + "首张做字节级比对，行序自动判定，不一致则永久回退）");
+
+            if (!SystemInfo.supportsAsyncGPUReadback)
+            {
+                Debug.LogWarning("[更好的存档] 当前平台不支持 AsyncGPUReadback，预览图会退回同步路径");
+            }
+            else
+            {
+                Diag.Trace("[更好的存档] 缩略图捕获：存档（自动/手动）均走 AsyncGPUReadback，编码写盘在线程池");
+            }
             return true;
         }
 
@@ -128,12 +148,16 @@ namespace SaveOpt
                     return;
                 }
 
+                bufferRenderTextureField = AccessTools.FieldRefAccess<Timelapser, RenderTexture>("bufferRenderTexture");
+                if (bufferRenderTextureField == null)
+                {
+                    Debug.LogWarning("[更好的存档] 找不到 Timelapser.bufferRenderTexture，预览 RT 复用未启用");
+                }
+
                 harmony.Patch(colony, prefix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(ThumbnailAsync), "SaveColonyPreview_Prefix")));
                 harmony.Patch(refresh, prefix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(ThumbnailAsync), "Refresh_Prefix")));
 
-                Diag.Trace("[更好的存档] 预览图只在开局第一次存档时捕获一次，之后每次存档都直接复制上一周期那张 png。"
-                    + "源是上一周期而不是开局那张，因此永远落在自动存档最近 10 个槽位内，不会被轮转删除。"
-                    + "实测捕获开销 1.3-1.4 s 且与分辨率无关（成本在两次完整相机渲染与相机移动触发的全图重新剔除）");
+                Diag.Trace("[更好的存档] 预览图捕获：不再复制上一周期 png，而是每次存档都走 AsyncGPUReadback 异步回读 RT");
             }
             catch (Exception e)
             {
@@ -141,58 +165,182 @@ namespace SaveOpt
             }
         }
 
-        public static bool SaveColonyPreview_Prefix(string __0)
+        // ───────── AsyncGPUReadback 路径（预览图专用）─────────
+
+        public static bool WriteToPng_Prefix(Timelapser __instance, RenderTexture renderTex, int world_id)
         {
-            skipThisSave = false;
-
-            string target;
-            try { target = Path.ChangeExtension(__0, ".png"); }
-            catch (Exception) { return true; }
-            if (string.IsNullOrEmpty(target)) return true;
-
-            if (lastPngPath != null)
+            if (previewScreenshotField == null || previewSaveGamePathField == null)
             {
-                skipThisSave = true;
-                haveSource = File.Exists(lastPngPath);
-                previewSkips++;
-                if (previewSkips == 1)
-                {
-                    Debug.Log("[更好的存档] 预览图捕获已跳过：整个捕获不做，直接复制上一周期 "
-                        + Path.GetFileName(lastPngPath));
-                }
-                return false;
+                return true;
             }
 
-            lastPngPath = target;
-            previewCaptures++;
-            Debug.Log("[更好的存档] 预览图首次捕获（本局仅此一次）：" + __0);
-            return true;
+            bool isPreview;
+            try
+            {
+                isPreview = previewScreenshotField(__instance);
+            }
+            catch (Exception)
+            {
+                return true;
+            }
+
+            if (!isPreview)
+            {
+                return true;
+            }
+
+            string previewPath;
+            try
+            {
+                previewPath = previewSaveGamePathField(__instance);
+            }
+            catch (Exception)
+            {
+                return true;
+            }
+
+            if (string.IsNullOrEmpty(previewPath))
+            {
+                return true;
+            }
+
+            string pngPath;
+            try
+            {
+                pngPath = Path.ChangeExtension(previewPath, ".png");
+            }
+            catch (Exception)
+            {
+                return true;
+            }
+
+            if (string.IsNullOrEmpty(pngPath) || renderTex == null)
+            {
+                return true;
+            }
+
+            if (!SystemInfo.supportsAsyncGPUReadback)
+            {
+                return true;
+            }
+
+            int w = renderTex.width;
+            int h = renderTex.height;
+            if (w <= 0 || h <= 0)
+            {
+                return true;
+            }
+
+            try
+            {
+                asyncRequests++;
+                AsyncGPUReadback.Request(renderTex, 0, TextureFormat.RGBA32,
+                    request => ThumbnailAsync.OnReadbackComplete(request, w, h, pngPath));
+            }
+            catch (Exception e)
+            {
+                asyncFailed++;
+                Debug.LogWarning("[更好的存档] AsyncGPUReadback 请求失败，回退同步: " + e.Message);
+                return true;
+            }
+
+            return false;
         }
 
-        internal static string FinishSave(string savePath, out string to)
+        private static void OnReadbackComplete(AsyncGPUReadbackRequest request, int width, int height, string pngPath)
         {
-            to = null;
-            if (!skipThisSave) return null;
-            skipThisSave = false;
-
-            if (!haveSource)
+            if (request.hasError)
             {
-                previewMisses++;
-                return null;
+                asyncFailed++;
+                Debug.LogError("[更好的存档] AsyncGPUReadback 完成时出错: " + pngPath);
+                return;
             }
 
-            try { to = Path.ChangeExtension(savePath, ".png"); }
-            catch (Exception) { to = null; }
-            if (string.IsNullOrEmpty(to))
+            try
             {
-                previewMisses++;
-                return null;
-            }
+                NativeArray<byte> data = request.GetData<byte>();
+                int expected = width * height * 4;
 
-            string from = lastPngPath;
-            lastPngPath = to;
-            previewCopies++;
-            return from;
+                if (data.Length < expected)
+                {
+                    asyncFailed++;
+                    Debug.LogError("[更好的存档] AsyncGPUReadback 数据长度不符: " + data.Length + " < " + expected);
+                    return;
+                }
+
+                byte[] raw = new byte[expected];
+                NativeArray<byte>.Copy(data, raw);
+
+                asyncCompleted++;
+
+                ThreadPool.QueueUserWorkItem(_ => ThumbnailAsync.EncodeAndWrite(raw, width, height, pngPath));
+            }
+            catch (Exception e)
+            {
+                asyncFailed++;
+                Debug.LogError("[更好的存档] AsyncGPUReadback 数据处理失败: " + e.Message);
+            }
+        }
+
+        private static void EncodeAndWrite(byte[] rgba, int width, int height, string pngPath)
+        {
+            try
+            {
+                long t0 = (long)Now();
+
+                byte[] source = FlipRowsForPNG
+                    ? ThumbnailAsync.FlipRows(rgba, width, height)
+                    : rgba;
+
+                byte[] png = ImageConversion.EncodeArrayToPNG(
+                    source,
+                    GraphicsFormat.R8G8B8A8_UNorm,
+                    (uint)width,
+                    (uint)height,
+                    (uint)(width * 4));
+
+                File.WriteAllBytes(pngPath, png);
+
+                long ms = (long)Now() - t0;
+
+                lock (Gate)
+                {
+                    jobs++;
+                    lastEncodeMs = ms;
+                    totalEncodeMs += ms;
+                    bytes += png.Length;
+                }
+
+                if (jobs == 1)
+                {
+                    Diag.Trace("[更好的存档] AsyncGPUReadback 首张 " + width + "x" + height
+                        + "，线程池编码+写盘 " + ms + " ms，" + png.Length + " 字节");
+                }
+            }
+            catch (Exception e)
+            {
+                asyncFailed++;
+                Debug.LogError("[更好的存档] 线程池编码失败: " + pngPath + " : " + e.Message);
+            }
+        }
+
+        private static byte[] FlipRows(byte[] src, int width, int height)
+        {
+            int rowBytes = width * 4;
+            byte[] dst = new byte[src.Length];
+            for (int y = 0; y < height; y++)
+            {
+                Buffer.BlockCopy(src, y * rowBytes, dst, (height - 1 - y) * rowBytes, rowBytes);
+            }
+            return dst;
+        }
+
+        public static bool SaveColonyPreview_Prefix(string __0)
+        {
+            // 预览图不再复制上一周期 png：每次存档都真捕获一次，
+            // 捕获路径由 WriteToPng_Prefix 接手，直接对 RT 发起 AsyncGPUReadback。
+            previewCaptures++;
+            return true;
         }
 
         public static void Refresh_Prefix(Timelapser __instance)
@@ -456,8 +604,9 @@ namespace SaveOpt
                 + " MB，最近一张 " + lastEncodeMs + " ms；主线程只做像素抓取 " + lastMainMs
                 + " ms；回退 " + fallbacks + " 次"
                 + (mismatch ? " ｜ ★★ 曾出现字节不一致" : " ｜ 首张已与主线程结果逐字节比对通过")
-                + " ｜ 预览图：真实捕获 " + previewCaptures + " 次，跳过捕获 " + previewSkips
-                + " 次，复制上一周期 " + previewCopies + " 次，无源图而留空 " + previewMisses + " 次";
+                + " ｜ AsyncGPUReadback：请求 " + asyncRequests + " 次，完成 " + asyncCompleted
+                + " 次，失败 " + asyncFailed + " 次"
+                + " ｜ 预览图：真实捕获 " + previewCaptures + " 次，跳过捕获 " + previewSkips + " 次";
         }
     }
 }

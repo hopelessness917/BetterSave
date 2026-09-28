@@ -167,9 +167,7 @@ namespace SaveOpt
             }
 
             if (SerializerPatch.VerifyMode) SerializerPatch.EndVerify("首次存档完成");
-            string pngTo; string pngFrom = ThumbnailAsync.FinishSave(path, out pngTo);
-            if (pngFrom != null) FrameWatch.NotePreviewCopy();
-            if (!Sink.Enqueue(head, src, srcLen, path, pngFrom, pngTo)) SaveBuffer.Release(src);
+            if (!Sink.Enqueue(head, src, srcLen, path)) SaveBuffer.Release(src);
 
             Debug.Log("[更好的存档] 存档 #" + saved + " " + (isAuto ? "自动" : "手动") + " -> "
                 + Path.GetFileName(path) + " ｜ 主线程 " + total.ToString("F0") + " ms ｜ 未压缩 "
