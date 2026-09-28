@@ -36,7 +36,7 @@ msgstr "Autosave extras"
 
 msgctxt "STRINGS.BETTERSAVE.OPTIONS.AUTOSAVEEXTRAS.TOOLTIP"
 msgid "Autosaves run in the background. Running GC and capturing a thumbnail together causes a noticeable hitch; if you pick \"Both\" expect a short freeze. Manual saves always run GC and always capture a thumbnail. Restart not required."
-msgstr "Manual saves always follow the game's original logic.\nPicking \"Both\" for autosaves matches the game's original logic — GC and thumbnail capture run together and cause the longest hitch.\nLow-memory users should pick \"GC only\", otherwise you may run out of memory.\nRestart not required."
+msgstr "Controls GC and screenshot behaviour for autosaves.\n\"Both\" = vanilla behaviour, longest hitch.\nLow-memory users: pick \"GC only\" to avoid out-of-memory crashes.\nRestart not required."
 
 msgctxt "STRINGS.BETTERSAVE.OPTIONS.AUTOSAVEEXTRAS.NONE"
 msgid "None (fastest)"
@@ -53,3 +53,11 @@ msgstr "Thumbnail only (medium hitch)"
 msgctxt "STRINGS.BETTERSAVE.OPTIONS.AUTOSAVEEXTRAS.BOTH"
 msgid "Both (will hitch)"
 msgstr "Both (worst hitch)"
+
+msgctxt "STRINGS.BETTERSAVE.OPTIONS.MANUALSAVEALLOWGC.NAME"
+msgid "Allow GC on manual save"
+msgstr "Allow GC on manual save"
+
+msgctxt "STRINGS.BETTERSAVE.OPTIONS.MANUALSAVEALLOWGC.TOOLTIP"
+msgid "On by default. Manual saves run a full GC at the end (vanilla behaviour). Turn off to skip it — save is faster but heap peak is higher. Restart not required."
+msgstr "On by default. Manual saves run a full GC at the end (vanilla behaviour).\nTurn off to skip it — save is faster but heap peak is higher.\nRestart not required."

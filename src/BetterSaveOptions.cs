@@ -53,6 +53,12 @@ namespace SaveOpt
 		[Option("STRINGS.BETTERSAVE.OPTIONS.GCMAXTIMESLICE.NAME", "STRINGS.BETTERSAVE.OPTIONS.GCMAXTIMESLICE.TOOLTIP", "STRINGS.BETTERSAVE.OPTIONS.CATEGORIES.GC")]
 		[JsonProperty]
 		public GcMaxTimeSliceType GcMaxTimeSlice { get; set; } = GcMaxTimeSliceType.Three;
+		
+        // 手动存档是否放行 GC。默认 true（原版行为：存档末尾清一次堆）。
+        // 关闭后手动存档也不 GC，堆峰值会略高，但存档更快。
+        [Option("STRINGS.BETTERSAVE.OPTIONS.MANUALSAVEALLOWGC.NAME", "STRINGS.BETTERSAVE.OPTIONS.MANUALSAVEALLOWGC.TOOLTIP", "STRINGS.BETTERSAVE.OPTIONS.CATEGORIES.GC")]
+        [JsonProperty]
+        public bool ManualSaveAllowGC { get; set; } = true;
 
 		// 自动存档附加动作四档。GC 和截图同时做会明显卡顿，因此拆成互斥档 + 全开档。
 		[Option("STRINGS.BETTERSAVE.OPTIONS.AUTOSAVEEXTRAS.NAME", "STRINGS.BETTERSAVE.OPTIONS.AUTOSAVEEXTRAS.TOOLTIP", "STRINGS.BETTERSAVE.OPTIONS.CATEGORIES.GC")]

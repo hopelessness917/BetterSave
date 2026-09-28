@@ -36,7 +36,7 @@ msgstr "自动存档附加动作"
 
 msgctxt "STRINGS.BETTERSAVE.OPTIONS.AUTOSAVEEXTRAS.TOOLTIP"
 msgid "Autosaves run in the background. Running GC and capturing a thumbnail together causes a noticeable hitch; if you pick \"Both\" expect a short freeze. Manual saves always run GC and always capture a thumbnail. Restart not required."
-msgstr "手动存档始终游戏原始逻辑。\n自动存档选“都做”是游戏原始逻辑，会GC 和截图同时执行最长卡顿。\n低内存建议选“只 GC”因为可能爆内存\n改动无需重启。"
+msgstr "自动存档的GC内存回收、截图\n自动存档选“都做”是游戏原始逻辑，GC 和截图都执行最长卡顿。\n低内存建议选“只 GC”因为可能爆内存\n改动无需重启。"
 
 msgctxt "STRINGS.BETTERSAVE.OPTIONS.AUTOSAVEEXTRAS.NONE"
 msgid "None (fastest)"
@@ -53,3 +53,11 @@ msgstr "只截图（中卡）"
 msgctxt "STRINGS.BETTERSAVE.OPTIONS.AUTOSAVEEXTRAS.BOTH"
 msgid "Both (will hitch)"
 msgstr "都做（最卡）"
+
+msgctxt "STRINGS.BETTERSAVE.OPTIONS.MANUALSAVEALLOWGC.NAME"
+msgid "Allow GC on manual save"
+msgstr "手动存档 GC"
+
+msgctxt "STRINGS.BETTERSAVE.OPTIONS.MANUALSAVEALLOWGC.TOOLTIP"
+msgid "On by default. Manual saves run a full GC at the end (vanilla behaviour). Turn off to skip it — save is faster but heap peak is higher. Restart not required."
+msgstr "默认开启，手动存档结束时执行一次全量 GC（原版行为）。\n关闭后跳过 GC，存档更快，但堆峰值会略高。\n低内存用户慎关。\n改动无需重启。"

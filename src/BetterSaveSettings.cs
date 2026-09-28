@@ -10,6 +10,7 @@ namespace SaveOpt
 		public static int GcMaxTimeSlice { get; private set; } = 3;
 		public static bool AutoSaveAllowGC { get; private set; } = false;
 		public static bool AutoSaveThumbnail { get; private set; } = false;
+		public static bool ManualSaveAllowGC { get; private set; } = true;
 
 		// 启动时调用一次。boot.config 是 gc-max-time-slice 的唯一权威源：
 		//   1. 从 config.json 读其它选项（ManualGcMode / AutoSaveThumbnail）
@@ -55,6 +56,7 @@ namespace SaveOpt
 				return;
 			}
 			ManualGcMode = opts.ManualGcMode;
+			ManualSaveAllowGC = opts.ManualSaveAllowGC;
 			GcMaxTimeSlice = Mathf.Clamp((int)opts.GcMaxTimeSlice, 1, 6);
 
 			// 四档翻译成两个运行时 bool，供 GC_Prefix 和 SaveColonyPreview_Prefix 读取

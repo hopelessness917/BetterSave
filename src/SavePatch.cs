@@ -209,9 +209,8 @@ namespace SaveOpt
             // 非存档窗口：照常放行。Boehm 自动回收不走这里，
             // 这里拦的只是显式 GC.Collect()，其它时点没必要拦。
             if (!inSave) return true;
-            // 手动存档：玩家主动触发，能接受几百毫秒卡顿，
-            // 且存完立即清一次能降低堆峰值，始终放行。
-            if (!isAuto) return true;
+            // 手动存档：默认放行（原版行为），可在选项里关闭。
+            if (!isAuto) return BetterSaveSettings.ManualSaveAllowGC;
             // 自动存档：默认拦截（避免后台卡顿），
             // 玩家可在选项里打开“自动存档时允许 GC”。
             return BetterSaveSettings.AutoSaveAllowGC;

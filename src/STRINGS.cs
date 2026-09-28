@@ -29,6 +29,12 @@
 					public static LocString NAME = "Thumbnail on autosave too";
 					public static LocString TOOLTIP = "Off by default. Autosaves are temporary; thumbnails add little value. Manual saves always capture a thumbnail.";
 				}
+				
+                public static class MANUALSAVEALLOWGC
+                {
+                    public static LocString NAME = "Allow GC on manual save";
+                    public static LocString TOOLTIP = "On by default. Manual saves run a full GC at the end (vanilla behaviour). Turn off to skip it — save is faster but heap peak is higher. Restart not required.";
+                }
 			}
 		}
 	}
