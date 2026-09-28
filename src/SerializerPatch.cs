@@ -85,8 +85,13 @@ namespace SaveOpt
         private static long calls;
         private static long directCalls;
 
-        private static readonly ConditionalWeakTable<KSerialization.SerializationTemplate, FieldPlan[]> Plans =
-            new ConditionalWeakTable<KSerialization.SerializationTemplate, FieldPlan[]>();
+        // PlanCache 按 Type 缓存而不是按 SerializationTemplate 缓存。
+        // KSerialization.Manager.Clear 每次存档都会清空 serializationTemplatesByType，
+        // 下次构造出的 SerializationTemplate 是新对象；如果用旧对象做 key，
+        // 缓存永远不命中且字典会越积越大。Type 是稳定的，可以跨存档复用。
+        private static readonly Dictionary<Type, FieldPlan[]> PlanCache = new Dictionary<Type, FieldPlan[]>();
+        private static Type lastType;
+        private static FieldPlan[] lastPlans;
 
         internal static bool VerifyMode { get { return verify; } }
         internal static long Verified { get { return verified; } }
@@ -121,19 +126,23 @@ namespace SaveOpt
             return Body(__instance, obj, writer);
         }
 
-        private static FieldPlan[] PlansFor(KSerialization.SerializationTemplate t)
+        private static FieldPlan[] GetOrBuildPlans(KSerialization.SerializationTemplate t)
         {
-            var fields = t.serializableFields;
-            int n = fields == null ? 0 : fields.Count;
+            Type type = t.serializableType;
+            if (ReferenceEquals(type, lastType)) return lastPlans;
 
             FieldPlan[] plans;
-            if (Plans.TryGetValue(t, out plans) && plans.Length == n) return plans;
+            if (!PlanCache.TryGetValue(type, out plans))
+            {
+                var fields = t.serializableFields;
+                plans = new FieldPlan[fields.Count];
+                for (int i = 0; i < fields.Count; i++) plans[i] = FieldPlanner.For(fields[i].field, fields[i].typeInfo);
 
-            plans = new FieldPlan[n];
-            for (int i = 0; i < n; i++) plans[i] = FieldPlanner.For(fields[i].field, fields[i].typeInfo);
+                PlanCache[type] = plans;
+            }
 
-            Plans.Remove(t);
-            Plans.Add(t, plans);
+            lastType = type;
+            lastPlans = plans;
             return plans;
         }
 
@@ -150,27 +159,33 @@ namespace SaveOpt
 
             bool check = verify;
             var fields = __instance.serializableFields;
-            if (fields != null)
+            if (fields != null && fields.Count > 0)
             {
-                FieldPlan[] plans = PlansFor(__instance);
+                FieldPlan[] plans = GetOrBuildPlans(__instance);
                 for (int i = 0; i < fields.Count; i++)
                 {
                     KSerialization.SerializationTemplate.SerializationField sf = fields[i];
                     FieldPlan plan = plans[i];
                     try
                     {
+                        bool usedFast = false;
                         if (plan.Fast != null)
                         {
                             if (!plan.Checked) FieldPlanner.Check(plan, obj, sf.typeInfo);
                             if (plan.Trusted)
                             {
                                 plan.Fast(obj, writer);
-                                continue;
+                                FieldPlanner.NoteFast(plan.Code);
+                                usedFast = true;
                             }
                         }
-                        object value = plan.Getter(obj);
-                        if (check) value = VerifyField(sf.field, obj, value);
-                        KSerialization.Helper.WriteValue(writer, sf.typeInfo, value);
+                        if (!usedFast)
+                        {
+                            object value = plan.Getter(obj);
+                            if (check) value = VerifyField(sf.field, obj, value);
+                            KSerialization.Helper.WriteValue(writer, sf.typeInfo, value);
+                            FieldPlanner.NoteSlow(plan.Code);
+                        }
                     }
                     catch (Exception inner)
                     {
@@ -192,6 +207,7 @@ namespace SaveOpt
                         object value2 = Accessors.For(sp.property)(obj);
                         if (check) value2 = VerifyProperty(sp.property, obj, value2);
                         KSerialization.Helper.WriteValue(writer, sp.typeInfo, value2);
+                        FieldPlanner.NoteProperty();
                     }
                     catch (Exception inner2)
                     {

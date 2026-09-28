@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using Expr = System.Linq.Expressions.Expression;
 using System.Reflection;
+using System.Text;
 using HarmonyLib;
 using KSerialization;
 using UnityEngine;
@@ -27,6 +28,12 @@ namespace SaveOpt
         private static readonly MethodInfo KleiString = AccessTools.Method(typeof(KSerialization.IOHelper), "WriteKleiString");
         private static readonly Dictionary<FieldInfo, FieldPlan> Cache = new Dictionary<FieldInfo, FieldPlan>();
 
+        private static readonly long[] FastByCode = new long[64];
+        private static readonly long[] SlowByCode = new long[64];
+
+        private static long fastCalls;
+        private static long slowCalls;
+        private static long propCalls;
         private static long checks;
         private static long rejections;
 
@@ -45,6 +52,29 @@ namespace SaveOpt
 
         internal static long Checks { get { return checks; } }
         internal static long Rejections { get { return rejections; } }
+
+        internal static void NoteFast(int code)
+        {
+            fastCalls += 1L;
+            if (code >= 0 && code < 64)
+            {
+                FastByCode[code] += 1L;
+            }
+        }
+
+        internal static void NoteSlow(int code)
+        {
+            slowCalls += 1L;
+            if (code >= 0 && code < 64)
+            {
+                SlowByCode[code] += 1L;
+            }
+        }
+
+        internal static void NoteProperty()
+        {
+            propCalls += 1L;
+        }
 
         internal static void Check(FieldPlan plan, object obj, KSerialization.TypeInfo ti)
         {
@@ -233,8 +263,68 @@ namespace SaveOpt
 
         internal static string Summary()
         {
-            return "[更好的存档] 字段快写：缓存 " + Cache.Count + " 个字段，字节校验 "
-                + checks + " 个，拒绝 " + rejections + " 个";
+            long total = fastCalls + slowCalls;
+            var sb = new StringBuilder("[更好的存档] 第五刀：快速写入 " + fastCalls + " 次");
+            if (total > 0)
+            {
+                sb.Append("（占 ").Append((fastCalls * 100.0 / total).ToString("F1")).Append("%）");
+            }
+            sb.Append("，回退 ").Append(slowCalls)
+              .Append(" 次，属性 ").Append(propCalls)
+              .Append(" 次；字段字节校验 ").Append(checks)
+              .Append(" 个，拒绝 ").Append(rejections).Append(" 个");
+            sb.Append(" ｜ 快写: ");
+            AppendCodes(sb, FastByCode, true);
+            sb.Append(" ｜ 回退: ");
+            AppendCodes(sb, SlowByCode, false);
+            return sb.ToString();
+        }
+
+        private static void AppendCodes(StringBuilder sb, long[] counts, bool skipZero)
+        {
+            bool any = false;
+            for (int i = 0; i < 64; i++)
+            {
+                if (!skipZero || counts[i] != 0)
+                {
+                    if (any) sb.Append(", ");
+                    sb.Append(CodeName(i)).Append('=').Append(counts[i]);
+                    any = true;
+                }
+            }
+            if (!any) sb.Append("无");
+        }
+
+        private static string CodeName(int c)
+        {
+            switch (c)
+            {
+                case 0: return "用户定义";
+                case 1: return "SByte";
+                case 2: return "Byte";
+                case 3: return "Bool";
+                case 4: return "Int16";
+                case 5: return "UInt16";
+                case 6: return "Int32";
+                case 7: return "UInt32";
+                case 8: return "Int64";
+                case 9: return "UInt64";
+                case 10: return "Single";
+                case 11: return "Double";
+                case 12: return "String";
+                case 13: return "枚举";
+                case 14: return "Vector2I";
+                case 15: return "Vector2";
+                case 16: return "Vector3";
+                case 17: return "Array";
+                case 18: return "Pair";
+                case 19: return "Dict";
+                case 20: return "List";
+                case 21: return "HashSet";
+                case 22: return "Queue";
+                case 23: return "Color";
+                default: return "码" + c;
+            }
         }
     }
 }
