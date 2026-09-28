@@ -56,61 +56,59 @@ namespace SaveOpt
         private static double captureTotal;
         private static double captureMax;
 
-        internal static bool Apply(HarmonyLib.Harmony harmony)
-        {
-            bool frameHook = false;
-            try
-            {
-                Type appType = AccessTools.TypeByName("App");
-                MethodInfo late = appType == null ? null : AccessTools.Method(appType, "LateUpdate");
-                if (late == null)
-                {
-                    Debug.LogWarning("[更好的存档] 找不到 App.LateUpdate，体感窗口无法测量");
-                }
-                else
-                {
-                    harmony.Patch(late, postfix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(FrameWatch), "Tick")));
-                    lastFrame = Time.realtimeSinceStartup;
-                    frameHook = true;
-                    Diag.Trace("[更好的存档] 体感窗口测量已挂载（逐帧记录存档开始后 " + (int)Window + " s 内 ≥"
-                        + (int)ThresholdMs + " ms 的卡顿）");
-                }
+		internal static bool Apply(HarmonyLib.Harmony harmony)
+		{
+			bool frameHook = false;
+			try
+			{
+				MethodInfo late = AccessTools.Method(typeof(App), "LateUpdate", null, null);
+				if (late == null)
+				{
+					Debug.LogWarning("[更好的存档] 找不到 App.LateUpdate，体感窗口无法测量");
+				}
+				else
+				{
+					harmony.Patch(late, postfix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(FrameWatch), "Tick")));
+					lastFrame = Time.realtimeSinceStartup;
+					frameHook = true;
+					Diag.Trace("[更好的存档] 体感窗口测量已挂载（逐帧记录存档开始后 " + (int)Window + " s 内 ≥"
+						+ (int)ThresholdMs + " ms 的卡顿）");
+				}
 
-                Type tl = AccessTools.TypeByName("Timelapser");
-                MethodInfo rap = tl == null ? null : AccessTools.Method(tl, "RenderAndPrint");
-                if (rap != null)
-                {
-                    harmony.Patch(rap,
-                        prefix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(FrameWatch), "Preview_Prefix")),
-                        postfix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(FrameWatch), "Preview_Postfix")));
-                    Diag.Trace("[更好的存档] 预览图生成计时已挂载（Timelapser.RenderAndPrint）");
-                }
-                else
-                {
-                    Debug.LogWarning("[更好的存档] 找不到 Timelapser.RenderAndPrint，预览图计时段缺失");
-                }
+				MethodInfo rap = AccessTools.Method(typeof(Timelapser), "RenderAndPrint", null, null);
+				if (rap != null)
+				{
+					harmony.Patch(rap,
+						prefix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(FrameWatch), "Preview_Prefix")),
+						postfix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(FrameWatch), "Preview_Postfix")));
+					Diag.Trace("[更好的存档] 预览图生成计时已挂载（Timelapser.RenderAndPrint）");
+				}
+				else
+				{
+					Debug.LogWarning("[更好的存档] 找不到 Timelapser.RenderAndPrint，预览图计时段缺失");
+				}
 
-                PatchTimer(harmony, AccessTools.TypeByName("PlayerController"), "AllowDragging",
-                    "AllowDragging_Prefix", "AllowDragging_Postfix", "PlayerController.AllowDragging");
-                PatchTimer(harmony, AccessTools.TypeByName("SaveActive"), "DeactivateSaveIndicator",
-                    "Deactivate_Prefix", "Deactivate_Postfix", "SaveActive.DeactivateSaveIndicator");
+				PatchTimer(harmony, typeof(PlayerController), "AllowDragging",
+					"AllowDragging_Prefix", "AllowDragging_Postfix", "PlayerController.AllowDragging");
+				PatchTimer(harmony, typeof(SaveActive), "DeactivateSaveIndicator",
+					"Deactivate_Prefix", "Deactivate_Postfix", "SaveActive.DeactivateSaveIndicator");
 
-                captureWatch = AccessTools.Method(typeof(GameUtil), "IsCapturingTimeLapse") != null;
-                if (captureWatch)
-                {
-                    Diag.Trace("[更好的存档] 预览捕获状态监测已挂载（经 GameUtil.IsCapturingTimeLapse，该状态为真时 CameraController 不处理输入）");
-                }
-                else
-                {
-                    Debug.LogWarning("[更好的存档] 找不到 GameUtil.IsCapturingTimeLapse，预览捕获窗口无法计时");
-                }
-            }
-            catch (Exception e)
-            {
-                Debug.LogWarning("[更好的存档] 体感窗口测量挂载失败: " + e.Message);
-            }
-            return frameHook;
-        }
+				captureWatch = AccessTools.Method(typeof(GameUtil), "IsCapturingTimeLapse") != null;
+				if (captureWatch)
+				{
+					Diag.Trace("[更好的存档] 预览捕获状态监测已挂载（经 GameUtil.IsCapturingTimeLapse，该状态为真时 CameraController 不处理输入）");
+				}
+				else
+				{
+					Debug.LogWarning("[更好的存档] 找不到 GameUtil.IsCapturingTimeLapse，预览捕获窗口无法计时");
+				}
+			}
+			catch (Exception e)
+			{
+				Debug.LogWarning("[更好的存档] 体感窗口测量挂载失败: " + e.Message);
+			}
+			return frameHook;
+		}
 
         private static void PatchTimer(HarmonyLib.Harmony harmony, Type owner, string name,
             string prefix, string postfix, string label)
