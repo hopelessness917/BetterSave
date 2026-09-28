@@ -39,6 +39,15 @@ namespace SaveOpt
 
         internal static bool Apply(HarmonyLib.Harmony harmony)
         {
+            // ★ 新增：面板开关。默认自动模式，不干预 GC；玩家在选项里打开“手动（高级）”才启用。
+            if (!BetterSaveSettings.ManualGcMode)
+            {
+                Diag.Trace("[更好的存档] GC 门控：自动模式，不干预 GC（GCMode=Enabled，游戏自管理）");
+                return false;
+            }
+
+            Debug.LogWarning("[更好的存档] GC 门控：手动模式（高级）。按住 GCMode=Disabled 由 mod 控制回收时机。低内存用户请改用自动模式。");
+
             Detect();
             if (!supported) return false;
 

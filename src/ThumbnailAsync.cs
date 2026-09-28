@@ -38,12 +38,24 @@ namespace SaveOpt
         private static Vector2Int previewApplied;
         private static bool previewHave;
         private static long previewShrinks;
+
+        // ───────── 自动 / 手动 ─────────
+
+        private static bool currentSaveIsAuto;
+        private static string lastManualPngPath;
+
+        // ───────── 统计 ─────────
+
         private static long previewCaptures;
         private static long previewSkips;
-
+        private static long previewCopies;
+        private static long previewMisses;
         private static long asyncRequests;
         private static long asyncCompleted;
         private static long asyncFailed;
+        private static long fallbacks;
+
+        // ───────── 后台编码线程（timelapse 回退路径）─────────
 
         private static readonly object Gate = new object();
         private static readonly Queue<ThumbJob> Queue = new Queue<ThumbJob>();
@@ -60,7 +72,6 @@ namespace SaveOpt
         private static readonly Queue<ThumbJob> Pending = new Queue<ThumbJob>();
 
         private static long jobs;
-        private static long fallbacks;
         private static long lastEncodeMs;
         private static long lastMainMs;
         private static long refEncodeMs;
@@ -123,7 +134,7 @@ namespace SaveOpt
             }
             else
             {
-                Diag.Trace("[更好的存档] 缩略图捕获：存档（自动/手动）均走 AsyncGPUReadback，编码写盘在线程池");
+                Diag.Trace("[更好的存档] 缩略图捕获：手动存档走 AsyncGPUReadback（主线程不阻塞），自动存档跳过截图并复制上一张");
             }
             return true;
         }
@@ -157,7 +168,8 @@ namespace SaveOpt
                 harmony.Patch(colony, prefix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(ThumbnailAsync), "SaveColonyPreview_Prefix")));
                 harmony.Patch(refresh, prefix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(ThumbnailAsync), "Refresh_Prefix")));
 
-                Diag.Trace("[更好的存档] 预览图捕获：不再复制上一周期 png，而是每次存档都走 AsyncGPUReadback 异步回读 RT");
+                Diag.Trace("[更好的存档] 预览图分辨率降至 " + (PreviewScale * 100f).ToString("F0")
+                    + "%，手动存档用 AsyncGPUReadback 捕获，自动存档跳过");
             }
             catch (Exception e)
             {
@@ -165,7 +177,14 @@ namespace SaveOpt
             }
         }
 
-        // ───────── AsyncGPUReadback 路径（预览图专用）─────────
+        // ───────── 自动 / 手动 标记 ─────────
+
+        internal static void NoteSaveKind(bool isAuto)
+        {
+            currentSaveIsAuto = isAuto;
+        }
+
+        // ───────── AsyncGPUReadback 路径（手动存档）─────────
 
         public static bool WriteToPng_Prefix(Timelapser __instance, RenderTexture renderTex, int world_id)
         {
@@ -337,10 +356,68 @@ namespace SaveOpt
 
         public static bool SaveColonyPreview_Prefix(string __0)
         {
-            // 预览图不再复制上一周期 png：每次存档都真捕获一次，
-            // 捕获路径由 WriteToPng_Prefix 接手，直接对 RT 发起 AsyncGPUReadback。
+            if (currentSaveIsAuto && !BetterSaveSettings.AutoSaveThumbnail) //自动保存禁止截图（可在选项里打开）
+            {
+                // 自动存档：跳过截图。稍后 FinishSave 从最近一次手动存档的 png 复制。
+                previewSkips++;
+                return false;
+            }
+
+            // 手动存档：正常截图，并记下这张 png 作为后续自动存档的复制源。
+            try
+            {
+                lastManualPngPath = Path.ChangeExtension(__0, ".png");
+            }
+            catch (Exception)
+            {
+                lastManualPngPath = null;
+            }
+
             previewCaptures++;
+            Diag.Trace("[更好的存档] 手动存档：真实捕获缩略图 -> " + Path.GetFileName(__0));
             return true;
+        }
+
+        internal static string FinishSave(string savePath, out string to)
+        {
+            to = null;
+
+            // 手动存档：不复制，让异步截图流程自己写 png
+            if (!currentSaveIsAuto)
+            {
+                return null;
+            }
+
+            // 自动存档：从最近一次手动存档的 png 复制
+            if (string.IsNullOrEmpty(lastManualPngPath) || !File.Exists(lastManualPngPath))
+            {
+                previewMisses++;
+                return null;
+            }
+
+            try
+            {
+                to = Path.ChangeExtension(savePath, ".png");
+            }
+            catch (Exception)
+            {
+                to = null;
+            }
+
+            if (string.IsNullOrEmpty(to))
+            {
+                previewMisses++;
+                return null;
+            }
+
+            // 源和目标相同就不复制
+            if (string.Equals(lastManualPngPath, to, StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            previewCopies++;
+            return lastManualPngPath;
         }
 
         public static void Refresh_Prefix(Timelapser __instance)
@@ -604,9 +681,10 @@ namespace SaveOpt
                 + " MB，最近一张 " + lastEncodeMs + " ms；主线程只做像素抓取 " + lastMainMs
                 + " ms；回退 " + fallbacks + " 次"
                 + (mismatch ? " ｜ ★★ 曾出现字节不一致" : " ｜ 首张已与主线程结果逐字节比对通过")
-                + " ｜ AsyncGPUReadback：请求 " + asyncRequests + " 次，完成 " + asyncCompleted
+                + " ｜ AsyncGPUReadback 请求 " + asyncRequests + " 次，完成 " + asyncCompleted
                 + " 次，失败 " + asyncFailed + " 次"
-                + " ｜ 预览图：真实捕获 " + previewCaptures + " 次，跳过捕获 " + previewSkips + " 次";
+                + " ｜ 预览图：手动捕获 " + previewCaptures + " 次，自动跳过 " + previewSkips
+                + " 次，复制上一张 " + previewCopies + " 次，无源图 " + previewMisses + " 次";
         }
     }
 }

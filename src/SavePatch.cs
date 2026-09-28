@@ -134,6 +134,10 @@ namespace SaveOpt
             FrameWatch.Begin();
             SaveTransform.BeginSave();
             SaveWatch.Start = Now();
+
+            // 通知缩略图模块：本次是自动还是手动。自动存档会跳过截图。
+            ThumbnailAsync.NoteSaveKind(isAutoSave);
+
             Diag.Trace("[更好的存档] 存档开始 " + (isAutoSave ? "自动" : "手动") + " -> " + Path.GetFileName(filename));
         }
 
@@ -167,7 +171,11 @@ namespace SaveOpt
             }
 
             if (SerializerPatch.VerifyMode) SerializerPatch.EndVerify("首次存档完成");
-            if (!Sink.Enqueue(head, src, srcLen, path)) SaveBuffer.Release(src);
+
+            string pngTo;
+            string pngFrom = ThumbnailAsync.FinishSave(path, out pngTo);
+            if (pngFrom != null) FrameWatch.NotePreviewCopy();
+            if (!Sink.Enqueue(head, src, srcLen, path, pngFrom, pngTo)) SaveBuffer.Release(src);
 
             Debug.Log("[更好的存档] 存档 #" + saved + " " + (isAuto ? "自动" : "手动") + " -> "
                 + Path.GetFileName(path) + " ｜ 主线程 " + total.ToString("F0") + " ms ｜ 未压缩 "
@@ -192,10 +200,20 @@ namespace SaveOpt
             return true;
         }
 
+        // ★★★ 唯一改动 ★★★
         public static bool GC_Prefix()
         {
-            return !inSave;
+            // 非存档窗口：照常放行。Boehm 自动回收不走这里，
+            // 这里拦的只是显式 GC.Collect()，其它时点没必要拦。
+            if (!inSave) return true;
+            // 手动存档：玩家主动触发，能接受几百毫秒卡顿，
+            // 且存完立即清一次能降低堆峰值，始终放行。
+            if (!isAuto) return true;
+            // 自动存档：默认拦截（避免后台卡顿），
+            // 玩家可在选项里打开“自动存档时允许 GC”。
+            return BetterSaveSettings.AutoSaveAllowGC;
         }
+        // ★★★ 改动结束 ★★★
 
         internal static double Now()
         {

@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
 using KMod;
+using PeterHan.PLib.Core;
+using PeterHan.PLib.Options;
 
 namespace SaveOpt
 {
@@ -27,6 +29,16 @@ namespace SaveOpt
         {
             try
             {
+                base.OnLoad(harmony);
+
+                PUtil.InitLibrary(false);
+                // 用 ModLocalization 把 po 直接塞进游戏 Strings 表，
+                // 这样 [Option("STRINGS.XXX")] 里的字符串常量能被翻译。
+                // PLib 的 PLocalization.Register() 只处理 LocString 字段，对这里不适用。
+                ModLocalization.Load(this.mod);
+                new POptions().RegisterOptions(this, typeof(BetterSaveOptions));
+                BetterSaveSettings.Initialize();
+
                 Sink.Start();
                 InstallQuitHook(harmony);
 

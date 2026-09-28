@@ -34,17 +34,33 @@ namespace SaveOpt
                 env = "探测失败: " + e.GetType().Name + " " + e.Message;
             }
             Diag.Trace("[更好的存档] GC 环境: " + env);
+
+            // ★ 新增：一行诊断日志，说明暂停检测可用性
+            Diag.Trace("[更好的存档] 暂停检测: 可用=True（直接访问 SpeedControlScreen.Instance / IsPaused）");
         }
 
         internal static long SafeHeap()
         {
             try { return GC.GetTotalMemory(false); }
-            catch (Exception) { return 0; }
+            catch (Exception) { return 0L; }
         }
 
         internal static long HeapMb()
         {
-            return SafeHeap() / 1048576;
+            return SafeHeap() / 1048576L;
+        }
+
+        // ★ 新增：供 GcModeGate 判断是否能检测"游戏暂停"
+        internal static bool PauseDetectable
+        {
+            get { return true; }
+        }
+
+        // ★ 新增：读 SpeedControlScreen 的 IsPaused
+        internal static bool IsPaused()
+        {
+            SpeedControlScreen instance = SpeedControlScreen.Instance;
+            return instance != null && instance.IsPaused;
         }
 
         internal static void BeginSave()
@@ -86,7 +102,9 @@ namespace SaveOpt
 
         internal static string Summary()
         {
-            return "[更好的存档] GC 环境: " + env + " ｜ 存档 " + savesSeen + " 次";
+            // ★ 改：末尾追加 " ｜ 暂停检测=可用/不可用"
+            return "[更好的存档] GC 环境: " + env + " ｜ 存档 " + savesSeen + " 次"
+                + " ｜ 暂停检测=" + (PauseDetectable ? "可用" : "不可用");
         }
     }
 }
