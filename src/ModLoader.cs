@@ -44,6 +44,7 @@ namespace SaveOpt
 
                 List<string> mounted = new List<string>();
                 Mount(mounted, "存档管线", SavePatch.Apply, harmony);
+                Mount(mounted, "序列化缓存", ManagerCachePatch.Apply, harmony);
                 Mount(mounted, "序列化委托", SerializerPatch.Apply, harmony);
                 Mount(mounted, "IsDefined缓存", IsDefinedPatch.Apply, harmony);
                 Mount(mounted, "GC门控", GcModeGate.Apply, harmony);
@@ -102,6 +103,7 @@ namespace SaveOpt
             Debug.Log(SaveBuffer.Summary());
             Debug.Log(ThumbnailAsync.Summary());
             Debug.Log(SaveTransform.Summary());
+            Debug.Log(ManagerCachePatch.Summary());
             if (Diag.Verbose)
             {
                 Debug.Log(SerializerPatch.Summary());
