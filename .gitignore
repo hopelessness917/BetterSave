@@ -6,3 +6,4 @@ obj/
 *.log
 *.pdb
 savverify/
+Directory.Build.props.user

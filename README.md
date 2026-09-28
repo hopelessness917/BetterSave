@@ -62,9 +62,9 @@
 5. **反射名解析失败 → 直接不挂载**并报错。
 6. **存档格式逐字节不变** ⇒ 原版兼容、随时可卸载、不会读不了档。
 
-## 本仓库里值得参考的缺氧技术点
+## 关键点
 
-这些是开发过程中从 IL 和实测里挖出来的，写在这里方便参考：
+仅供参考：
 
 **存档管线的确切结构**
 
@@ -83,7 +83,7 @@ Game.Instance.Save(w)
 外层 `SaveLoader.Save(string, bool, bool)` 另外做：建缓冲 → 写文件头 → `Manager.SerializeDirectory`
 → `CompressContents` → `Timelapser.SaveColonyPreview` → `GC.Collect()`。
 
-**几个容易踩的坑**
+**经过测试发现的问题**
 
 - **`SaveLoadRoot.SaveWithoutTransform` 是可重入的**：`ISaveLoadableDetails.Serialize` 的实现
   （如 `SolidConduitSerializer`）会再调 `SaveLoadRoot.Save`。实测最大深度 3。给它加任何状态都要做深度守卫。
@@ -94,11 +94,8 @@ Game.Instance.Save(w)
 - **Unity 的 icall 方法 Harmony 打不上**（`Component.GetComponents<T>()` 抛 `NotSupportedException`）。
   这条直接堵死了"把对象序列化搬到工作线程"的路。
 - **Harmony 的 `CodeInstruction` 不能当分支操作数**（`Unexpected unemittable operand type`）。
-  要"跳过原方法"应该用 **prefix 返回 `false`**，不要用 transpiler 去造分支。
-- **Harmony finalizer 在正常路径上也会执行**（生成成 `finally`），判据要用 `__exception != null`。
-- **收尾钩子（如 `Game.OnApplicationQuit`）要最先安装**：一个可选的补丁组件挂载失败会连带让它装不上。
-
-**Boehm GC（Mono）**
+  
+**一位大佬建议测试**
 
 - `GC.Collect(1)` 与 `GC.Collect()` **完全等价**：增量 1/1/1、堆降 64/64 MB、耗时 8–9 ms。
   `CollectionCount(0/1/2)` 全程恒等——**这一作的 Mono 在编译期就关掉了分代**。
@@ -107,94 +104,20 @@ Game.Instance.Save(w)
 - 缺氧自身**没有设任何内存阈值**：`Assembly-CSharp` 里 0 处 `GC.GetTotalMemory`，
   6 处 `GC.Collect()` 全是事件驱动。
 
-**性能测量方法（这个项目最贵的教训）**
+**性能测量方法（比较靠谱）**
 
 - **跨会话基线不可靠，会话内交替 A/B 才可信。** 同一局内逐次存档交替开关、配对比较，
-  能免疫 JIT、堆状态、殖民地增长带来的漂移。这个项目里有两次改动因为用跨会话数字对比而
-  被误判为"零收益"。
+  能免疫 JIT、堆状态、殖民地增长带来的漂移。
 - **只优化"单次 100 ns 以上"的每次调用开销**（编码、格式化、装箱、反射、真实字典查找、Harmony 跳板）。
-  数 10 ns 以下的微操作是浪费时间——单价会被高估一个数量级，还常被新增的开销抵掉。
-  本项目三次估算的准确率：单次 400 ns 的编码（估 124–247 → 实 245，准）；
-  单次 2–3 ns 的微操作（估 165 → 实 10，高 16 倍）；单次 5–20 ns 的三处减法（估 175 → 实 43，高 4 倍）。
+  数 10 ns 以下的微操作意义不大  
 
-## 构建
-
-需要：
-
-- 缺氧 **U59-744825** 或更新（默认 Steam 安装位置）
-- **Visual Studio 的 MSBuild**（目标 .NET Framework 4.8）
-
-```bat
-msbuild 更好的存档\更好的存档.csproj /p:Configuration=Release
-```
-
-游戏不在默认位置时，覆盖 `ONIManagedDir`：
-
-```bat
-msbuild 更好的存档\更好的存档.csproj /p:Configuration=Release ^
-  /p:ONIManagedDir="D:\Steam\steamapps\common\OxygenNotIncluded\OxygenNotIncluded_Data\Managed"
-```
-
-**注意**：请用 VS 的 `MSBuild.exe`，不要用 `dotnet msbuild`——`dotnet` 产出的 DLL 游戏加载不了。
-`0Harmony.dll` 与全部游戏程序集都从 `$(ONIManagedDir)` 引用，仓库里不含任何二进制。
-
-## 打包与部署
-
-把 `bin\Release\更好的存档.dll` 复制到 `mods\Local\<模组目录名>\`，重命名成任意名字
-（ONI 会加载目录里的所有 DLL，本项目部署时用的是 `BetterSave.dll`），并放上元数据：
-
-```yaml
-# mod.yaml —— staticID 必须与创意工坊一致，否则会被当成另一个模组
-staticID: BetterSave
-description: "..."
-title: "更好的存档"
-```
-
-```yaml
-# mod_info.yaml
-APIVersion: 2
-minimumSupportedBuild: 719533
-version: v2.9.0
-supportedContent: ALL
-```
-
-## 代码结构
-
-```
-更好的存档/
-├── 更好的存档.slnx
-└── 更好的存档/
-    ├── 更好的存档.csproj          # 老式工程：新增 .cs 必须登记进 <Compile Include>
-    ├── Properties/AssemblyInfo.cs
-    ├── tools/MeasurePatch.cs.txt  # 一次性测量脚本，后缀是 .txt 所以不参与编译
-    └── src/
-        ├── ModLoader.cs           # 入口（KMod.UserMod2 子类），逐个挂载各组件，每个组件独立 try/catch
-        ├── SavePatch.cs           # SaveLoader.Save 的 transpiler（换缓冲）+ prefix/postfix + GC 抑制
-        ├── SaveTransform.cs       # 重写 SaveWithoutTransform + 逐字节校验 + 可重入守卫
-        ├── SerializerPatch.cs     # SerializeData 的编译委托替换 + 双路校验
-        ├── FieldPlan.cs           # 逐字段的编译快写器
-        ├── IsDefinedPatch.cs      # IsDefined 缓存
-        ├── PooledStream.cs        # 自定义 MemoryStream（池化缓冲）
-        ├── SaveBuffer.cs          # 缓冲池
-        ├── Sink.cs                # 后台压缩 + 落盘
-        ├── GcModeGate.cs          # 托管回收门控
-        ├── GcTuner.cs             # 堆采样
-        ├── FrameWatch.cs          # 体感窗口监控
-        └── ThumbnailAsync.cs      # 缩略图后台化
-```
-
-## 已知边界
-
-- **单线程**：存档时间 ∝ **CPU 单核性能**，多核无用（Unity icall 只能在主线程）。
+## 主要问题
+- **单线程**：存档时间 ∝ **CPU 单核性能**，多核无用（Unity icall 只能在主线程），基本无解。
 - **硬盘速度不影响卡顿**，只影响后台压缩落盘与退出时的 flush。
-- 每局**前 2 次存档是完整校验**（约 1.3–1.7 s），第 3 次起才是 ~0.54 s。
-- **额外占用约 1.1 GB 内存**，低内存机器需要留意。
-- 只优化存档，不优化读档。
-- 剩余优化空间约 4–5%：剩余预算里 32% 是游戏自带的组件自定义序列化代码（`ISaveLoadableDetails.Serialize`），
-  33% 是字段派发（已是"数组读 + 委托调用 + 写"三步）。
+- 每局**前 2 次存档是完整校验**（约 1.3–1.7 s），第 3 次起才是 ~0.54 s，在考虑是否改成4次校验确保安全。
+- **额外占用约 1.1 GB 内存**，低内存机器需要留意，猜测目前8g以下应该可能出现，但无法求证。
+- 只优化存档，不优化读档，是否要把读档也优化呢？？。
+- 猜测剩余优化空间约 4–5%：剩余预算里 32% 是游戏自带的组件自定义序列化代码（`ISaveLoadableDetails.Serialize`），
+  33% 是字段派发（已是"数组读 + 委托调用 + 写"三步），而且剩余优化复杂而且不一定有效，
+  剩下600ms基本感觉都是游戏不可动的消耗，但是游戏新存档前期可以基本实现无感保存，可以探测一下原因，看是否与存档大小挂钩。
 
-## 许可
-
-[MIT](LICENSE) © 2026 hopelessness917
-
-欢迎参考、修改、再发布。如果这个项目里的某段实现或某条实测结论帮到了你，在 README 里提一句就好。

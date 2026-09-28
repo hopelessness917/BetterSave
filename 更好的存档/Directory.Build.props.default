@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  构建路径模板。不要直接改这个文件——它是给所有人看的「说明书」。
+  用法：把它复制一份、改名为 Directory.Build.props.user，再把路径改成你自己机器上的。
+  两个文件二选一加载：.user 存在就用 .user，不存在才用 .default。
+-->
+<Project>
+  <PropertyGroup>
+    <!-- 缺氧的 OxygenNotIncluded_Data\Managed 目录。所有 <HintPath> 靠它定位游戏程序集。 -->
+    <GameLibsFolder Condition="'$(GameLibsFolder)' == ''">C:\Program Files (x86)\Steam\steamapps\common\OxygenNotIncluded\OxygenNotIncluded_Data\Managed</GameLibsFolder>
+
+    <!--
+      本地 Klei 模组开发目录。Release 构建后会把产物拷成 BetterSave.dll 放进去。
+      留空 = 不拷贝（推荐给只想编译、不想自动部署的人）。
+      例：C:\Users\你\Documents\Klei\OxygenNotIncluded\mods\Local\更好的存档
+      注意：该目录里不要同时存在两个本模组的 DLL，否则游戏会加载两次、Harmony 补丁会打架。
+    -->
+    <ModFolder Condition="'$(ModFolder)' == ''"></ModFolder>
+  </PropertyGroup>
+</Project>

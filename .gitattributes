@@ -1,0 +1,9 @@
+# 仓库内统一使用 LF。Windows 工作区由 git 按平台自动转换，不影响编辑器体验。
+# 这条的作用是防止「通过网页上传」时把工作区的 CRLF 原样写进仓库——
+# 那会让 blob 哈希变化，之后每次真改这些文件，diff 都会显示整文件重写。
+* text=auto
+
+# 二进制文件明确排除，避免 git 尝试做行尾转换
+*.dll binary
+*.png binary
+*.pdb binary
