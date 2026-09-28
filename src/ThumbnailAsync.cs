@@ -38,6 +38,8 @@ namespace SaveOpt
         private static Vector2Int previewApplied;
         private static bool previewHave;
         private static long previewShrinks;
+        private static long rtReuses;
+        private static long rtRebuilds;
 
         // ───────── 自动 / 手动 ─────────
 
@@ -159,6 +161,7 @@ namespace SaveOpt
                     return;
                 }
 
+                // ★ 11b6670 新增
                 bufferRenderTextureField = AccessTools.FieldRefAccess<Timelapser, RenderTexture>("bufferRenderTexture");
                 if (bufferRenderTextureField == null)
                 {
@@ -420,19 +423,24 @@ namespace SaveOpt
             return lastManualPngPath;
         }
 
-        public static void Refresh_Prefix(Timelapser __instance)
+        // ★ 11b6670：签名 void → bool，末尾加 RT 复用逻辑
+        public static bool Refresh_Prefix(Timelapser __instance)
         {
-            if (previewRes == null) return;
-            Vector2Int cur = previewRes(__instance);
-            if (!previewHave || cur != previewApplied)
+            if (previewRes == null)
             {
-                previewOriginal = cur;
+                return true;
+            }
+
+            Vector2Int current = previewRes(__instance);
+            if (!previewHave || current != previewApplied)
+            {
+                previewOriginal = current;
                 previewHave = true;
             }
             int w = Mathf.Max(64, (int)(previewOriginal.x * PreviewScale));
             int h = Mathf.Max(64, (int)(previewOriginal.y * PreviewScale));
             Vector2Int scaled = new Vector2Int(w, h);
-            if (cur != scaled)
+            if (current != scaled)
             {
                 previewRes(__instance) = scaled;
                 previewShrinks++;
@@ -443,6 +451,95 @@ namespace SaveOpt
                 }
                 previewApplied = scaled;
             }
+
+            // RT 复用：尺寸 + 名字都对得上时跳过原版 Destroy + new。
+            // 原版流程每次截图周期都 DestroyRenderTexture() + new RenderTexture(...)，
+            // 稳态下这属于纯浪费；复用后只在分辨率变化时重建。
+            if (bufferRenderTextureField == null || previewScreenshotField == null)
+            {
+                return true;
+            }
+
+            bool isPreview;
+            try
+            {
+                isPreview = previewScreenshotField(__instance);
+            }
+            catch (Exception)
+            {
+                return true;
+            }
+
+            Vector2Int wantSize;
+            string wantName;
+            if (isPreview)
+            {
+                wantSize = previewRes(__instance);
+                wantName = "Timelapser.PreviewScreenshot";
+            }
+            else if (SaveGame.Instance != null && SaveGame.Instance.TimelapseResolution.x > 0)
+            {
+                wantSize = new Vector2Int(
+                    SaveGame.Instance.TimelapseResolution.x,
+                    SaveGame.Instance.TimelapseResolution.y);
+                wantName = "Timelapser.Timelapse";
+            }
+            else
+            {
+                // 原版两个 if 都不满足时什么都不做，这里跳过原版效果相同
+                return false;
+            }
+
+            RenderTexture currentRt;
+            try
+            {
+                currentRt = bufferRenderTextureField(__instance);
+            }
+            catch (Exception)
+            {
+                return true;
+            }
+
+            if (currentRt != null
+                && currentRt.width == wantSize.x
+                && currentRt.height == wantSize.y
+                && currentRt.name == wantName)
+            {
+                rtReuses++;
+                return false;
+            }
+
+            if (currentRt != null)
+            {
+                try
+                {
+                    currentRt.DestroyRenderTexture();
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            RenderTexture newRt = new RenderTexture(wantSize.x, wantSize.y, 32, RenderTextureFormat.ARGB32);
+            newRt.name = wantName;
+            bufferRenderTextureField(__instance) = newRt;
+            rtRebuilds++;
+
+            if (rtRebuilds == 1)
+            {
+                Diag.Trace(string.Concat(new string[]
+                {
+                    "[更好的存档] 预览 RT 首次创建 ",
+                    wantSize.x.ToString(),
+                    " x ",
+                    wantSize.y.ToString(),
+                    " (",
+                    wantName,
+                    ")"
+                }));
+            }
+
+            return false;
         }
 
         public static IEnumerable<CodeInstruction> Transpile(IEnumerable<CodeInstruction> instructions)
@@ -683,6 +780,8 @@ namespace SaveOpt
                 + (mismatch ? " ｜ ★★ 曾出现字节不一致" : " ｜ 首张已与主线程结果逐字节比对通过")
                 + " ｜ AsyncGPUReadback 请求 " + asyncRequests + " 次，完成 " + asyncCompleted
                 + " 次，失败 " + asyncFailed + " 次"
+                // ★ 11b6670 新增：RT 复用统计
+                + " ｜ 预览 RT 复用 " + rtReuses + " 次，重建 " + rtRebuilds + " 次"
                 + " ｜ 预览图：手动捕获 " + previewCaptures + " 次，自动跳过 " + previewSkips
                 + " 次，复制上一张 " + previewCopies + " 次，无源图 " + previewMisses + " 次";
         }
