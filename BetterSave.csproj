@@ -1,0 +1,199 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!-- 从 Directory.Build.props.default / .user 读取 GameLibsFolder、ModFolder 等路径变量 -->
+  <Import Condition=" !Exists('Directory.Build.props.user') " Project="Directory.Build.props.default" />
+  <Import Condition=" Exists('Directory.Build.props.user') " Project="Directory.Build.props.user" />
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <!-- 项目基本属性 -->
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>26bb2d46-c65f-4352-809a-30e00c2d2a15</ProjectGuid>
+    <OutputType>Library</OutputType>
+    <AppDesignerFolder>Properties</AppDesignerFolder>
+    <RootNamespace>SaveOpt</RootNamespace>
+    <AssemblyName>BetterSave</AssemblyName>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <LangVersion>8.0</LangVersion>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+  <!-- Debug 编译配置 -->
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <!-- Release 编译配置 -->
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <!-- 模组基本信息，供 CopyModToGame 生成 mod.yaml / mod_info.yaml -->
+  <PropertyGroup>
+    <MinimumSupportedBuild>719533</MinimumSupportedBuild>
+    <APIVersion>2</APIVersion>
+    <SupportedContent>ALL</SupportedContent>
+    <ModStaticID>BetterSave</ModStaticID>
+    <ModTitle>更好的存档</ModTitle>
+    <ModDescription>把存档时间理论提高70%</ModDescription>
+    <ModVersion>2.0.0</ModVersion>
+  </PropertyGroup>
+  <!-- 游戏 DLL 引用，路径由 Directory.Build.props.default 里的 GameLibsFolder 提供 -->
+  <ItemGroup>
+    <!-- .NET Framework 基础程序集 -->
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Xml" />
+    <Reference Include="System.Xml.Linq" />
+    <Reference Include="System.Data" />
+    <Reference Include="System.Data.DataSetExtensions" />
+    <Reference Include="Microsoft.CSharp" />
+    <Reference Include="System.Net.Http" />
+    <!-- 核心依赖 -->
+    <Reference Include="0Harmony">
+      <HintPath>$(GameLibsFolder)\0Harmony.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(GameLibsFolder)\Assembly-CSharp.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Assembly-CSharp-firstpass">
+      <HintPath>$(GameLibsFolder)\Assembly-CSharp-firstpass.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Ionic.Zip">
+      <HintPath>$(GameLibsFolder)\Ionic.Zip.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <!-- .NET Standard 与 Json -->
+    <Reference Include="netstandard">
+      <HintPath>$(GameLibsFolder)\netstandard.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>$(GameLibsFolder)\Newtonsoft.Json.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <!-- Unity 相关程序集，PLib 的 PComboBox 需要 TextMeshPro / TextCore 相关模块 -->
+    <Reference Include="Unity.TextMeshPro">
+      <HintPath>$(GameLibsFolder)\Unity.TextMeshPro.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(GameLibsFolder)\UnityEngine.CoreModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.ImageConversionModule">
+      <HintPath>$(GameLibsFolder)\UnityEngine.ImageConversionModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>$(GameLibsFolder)\UnityEngine.InputLegacyModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextCoreFontEngineModule">
+      <HintPath>$(GameLibsFolder)\UnityEngine.TextCoreFontEngineModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule">
+      <HintPath>$(GameLibsFolder)\UnityEngine.TextRenderingModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UI">
+      <HintPath>$(GameLibsFolder)\UnityEngine.UI.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UIModule">
+      <HintPath>$(GameLibsFolder)\UnityEngine.UIModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UnityWebRequestModule">
+      <HintPath>$(GameLibsFolder)\UnityEngine.UnityWebRequestModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <!-- PLib：请将 PLib.dll 放在项目根目录的 libs 文件夹下 -->
+    <Reference Include="PLib">
+      <HintPath>libs\PLib.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+  <!-- 窗体设计器目录（占位，无实际文件） -->
+  <ItemGroup>
+    <AppDesigner Include="Properties\" />
+  </ItemGroup>
+  <!-- 源文件 -->
+  <ItemGroup>
+    <Compile Include="src\**\*.cs" />
+    <Compile Include="Properties\AssemblyInfo.cs" />
+  </ItemGroup>
+  <!-- 翻译文件：PLib 的 PLocalization 从 mod 目录的 translations 子目录读 -->
+  <ItemGroup>
+    <TranslationFiles Include="ModAssets\translations\*.po" />
+  </ItemGroup>
+  <!-- ILRepack：把 libs\PLib.dll 合并进 BetterSave.dll，最终产物只有一个 DLL -->
+  <ItemGroup>
+    <PackageReference Include="ILRepack">
+      <Version>2.0.29</Version>
+      <GeneratePathProperty>true</GeneratePathProperty>
+    </PackageReference>
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <!-- 第一步：用 ILRepack.exe 命令行把 libs\PLib.dll 合并进主 DLL -->
+  <Target Name="MergePLib" AfterTargets="Build">
+    <PropertyGroup>
+      <_MergedDir>$(MSBuildProjectDirectory)\$(OutputPath)merged</_MergedDir>
+      <!-- $(PkgILRepack) 指向 NuGet 里 ILRepack 包的实际还原目录 -->
+      <_ILRepackExe>$(PkgILRepack)\tools\ILRepack.exe</_ILRepackExe>
+      <!-- 跨平台：Windows 直接运行 ILRepack.exe；Linux/Unix 用 mono 启动 -->
+      <_ILRepackRunner Condition="'$(OS)' != 'Unix'">
+      </_ILRepackRunner>
+      <_ILRepackRunner Condition="'$(OS)' == 'Unix'">mono </_ILRepackRunner>
+      <!-- GetFullPath 规范化路径；TrimEnd 去掉末尾反斜杠，避免 \ 被命令行当成 \" 转义引号 -->
+      <_AbsOutputPath>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)\$(OutputPath)'))</_AbsOutputPath>
+      <_AbsOutputPath>$(_AbsOutputPath.TrimEnd('\'))</_AbsOutputPath>
+      <_AbsGameLibs>$([System.IO.Path]::GetFullPath('$(GameLibsFolder)'))</_AbsGameLibs>
+      <_AbsGameLibs>$(_AbsGameLibs.TrimEnd('\'))</_AbsGameLibs>
+      <_MainDll>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)\$(OutputPath)$(AssemblyName).dll'))</_MainDll>
+      <_PLibDll>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)\libs\PLib.dll'))</_PLibDll>
+      <_OutDll>$([System.IO.Path]::GetFullPath('$(_MergedDir)\$(AssemblyName).dll'))</_OutDll>
+    </PropertyGroup>
+    <MakeDir Directories="$(_MergedDir)" />
+    <!-- /out: 输出文件；/internalize 将 PLib 类型内部化；/parallel 并行；/verbose 打印详细信息
+         /lib: 指定依赖搜索路径（先本地输出目录，再 GameLibsFolder）
+         ConsoleToMSBuild="true" 让 ILRepack 的输出出现在 VS 输出窗口
+         WorkingDirectory 让 ILRepack 能找到自己旁边的依赖 DLL -->
+    <Exec Command="$(_ILRepackRunner)&quot;$(_ILRepackExe)&quot; /out:&quot;$(_OutDll)&quot; /internalize /parallel /verbose &quot;$(_MainDll)&quot; &quot;$(_PLibDll)&quot; /lib:&quot;$(_AbsOutputPath)&quot; /lib:&quot;$(_AbsGameLibs)&quot;" WorkingDirectory="$(PkgILRepack)\tools" ConsoleToMSBuild="true" />
+  </Target>
+  <!-- 第二步：把合并后的唯一 DLL 和 mod.yaml/mod_info.yaml 复制到 mod 文件夹 -->
+  <Target Name="CopyModToGame" AfterTargets="MergePLib">
+    <PropertyGroup>
+      <!-- 目标 mod 目录，如 D:\Documents\Klei\OxygenNotIncluded\mods\Dev\BetterSave -->
+      <ProjectModFolder>$(ModFolder)\$(AssemblyName)</ProjectModFolder>
+    </PropertyGroup>
+    <!-- 确保目标目录存在 -->
+    <MakeDir Directories="$(ProjectModFolder)" Condition="!Exists('$(ProjectModFolder)')" />
+    <!-- 生成 mod_info.yaml -->
+    <WriteLinesToFile File="$(ProjectModFolder)\mod_info.yaml" Overwrite="true" Encoding="UTF-8" Lines="minimumSupportedBuild: $(MinimumSupportedBuild);APIVersion: $(APIVersion);supportedContent: $(SupportedContent);version: &quot;$(ModVersion)&quot;" />
+    <!-- 生成 mod.yaml -->
+    <WriteLinesToFile File="$(ProjectModFolder)\mod.yaml" Overwrite="true" Encoding="UTF-8" Lines="title: &quot;$(ModTitle)&quot;;description: &quot;$(ModDescription)&quot;;staticID: $(ModStaticID)" />
+    <!-- 复制合并后的 DLL（唯一产物，已包含 PLib） -->
+    <Copy SourceFiles="$(_MergedDir)\$(AssemblyName).dll" DestinationFolder="$(ProjectModFolder)" />
+    <!-- 复制 .pdb（如果存在） -->
+    <Copy SourceFiles="$(MSBuildProjectDirectory)\$(OutputPath)$(AssemblyName).pdb" DestinationFolder="$(ProjectModFolder)" Condition="Exists('$(MSBuildProjectDirectory)\$(OutputPath)$(AssemblyName).pdb')" />
+    <!-- 复制 .png（如果存在） -->
+    <Copy SourceFiles="ModAssets/assets/preview.png" DestinationFolder="$(ProjectModFolder)" Condition="Exists('ModAssets/assets/preview.png')" />
+    <!-- 复制 翻译文件 -->
+    <Copy SourceFiles="@(TranslationFiles)" DestinationFolder="$(ProjectModFolder)\translations\" />
+  </Target>
+</Project>

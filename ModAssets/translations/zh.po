@@ -1,0 +1,55 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: BetterSave\n"
+"Language: zh\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+msgctxt "STRINGS.BETTERSAVE.OPTIONS.CATEGORIES.GC"
+msgid "GC (Requires Restart)"
+msgstr "GC（需重启游戏）"
+
+msgctxt "STRINGS.BETTERSAVE.OPTIONS.CATEGORIES.THUMBNAIL"
+msgid "Thumbnail"
+msgstr "缩略图"
+
+msgctxt "STRINGS.BETTERSAVE.OPTIONS.MANUALGCMODE.NAME"
+msgid "Manual GC Management (Advanced)"
+msgstr "手动 GC 管理（高级）"
+
+msgctxt "STRINGS.BETTERSAVE.OPTIONS.MANUALGCMODE.TOOLTIP"
+msgid "Auto (recommended): GCMode=Enabled, the game manages GC on its own; recommended for low-memory users. Manual (advanced): GCMode=Disabled, the mod's GcModeGate controls collection timing; may reduce in-game stutter on high-memory systems only. Restart required."
+msgstr "自动（推荐）：让游戏自管理 GC，低内存用户建议自动。\n手动（高级）：由 mod 控制回收时机，可能减少游玩卡顿（其实区别不大）。\n改动需重启游戏生效。"
+
+msgctxt "STRINGS.BETTERSAVE.OPTIONS.GCMAXTIMESLICE.NAME"
+msgid "gc-max-time-slice"
+msgstr "GC 内存回收平滑"
+
+msgctxt "STRINGS.BETTERSAVE.OPTIONS.GCMAXTIMESLICE.TOOLTIP"
+msgid "Writes gc-max-time-slice into OxygenNotIncluded_Data/boot.config. Range 1-6, default 3. Restart required."
+msgstr "值越小：每帧 GC 的停顿越短，游戏越平滑，但完成一次完整回收的总时间会变长。\n值越大：GC 整体完成得更快，但每帧的卡顿感可能会略微增加。\n默认 3。改动需重启游戏生效。"
+
+msgctxt "STRINGS.BETTERSAVE.OPTIONS.AUTOSAVEEXTRAS.NAME"
+msgid "Autosave extras"
+msgstr "自动存档附加动作"
+
+msgctxt "STRINGS.BETTERSAVE.OPTIONS.AUTOSAVEEXTRAS.TOOLTIP"
+msgid "Autosaves run in the background. Running GC and capturing a thumbnail together causes a noticeable hitch; if you pick \"Both\" expect a short freeze. Manual saves always run GC and always capture a thumbnail. Restart not required."
+msgstr "手动存档始终游戏原始逻辑。\n自动存档选“都做”是游戏原始逻辑，会GC 和截图同时执行最长卡顿。\n低内存建议选“只 GC”因为可能爆内存\n改动无需重启。"
+
+msgctxt "STRINGS.BETTERSAVE.OPTIONS.AUTOSAVEEXTRAS.NONE"
+msgid "None (fastest)"
+msgstr "都不做（最快）"
+
+msgctxt "STRINGS.BETTERSAVE.OPTIONS.AUTOSAVEEXTRAS.GCONLY"
+msgid "GC only"
+msgstr "只 GC（中卡）"
+
+msgctxt "STRINGS.BETTERSAVE.OPTIONS.AUTOSAVEEXTRAS.THUMBONLY"
+msgid "Thumbnail only"
+msgstr "只截图（中卡）"
+
+msgctxt "STRINGS.BETTERSAVE.OPTIONS.AUTOSAVEEXTRAS.BOTH"
+msgid "Both (will hitch)"
+msgstr "都做（最卡）"

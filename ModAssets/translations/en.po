@@ -1,0 +1,55 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: BetterSave\n"
+"Language: en\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+msgctxt "STRINGS.BETTERSAVE.OPTIONS.CATEGORIES.GC"
+msgid "GC (Requires Restart)"
+msgstr "GC (Requires Restart)"
+
+msgctxt "STRINGS.BETTERSAVE.OPTIONS.CATEGORIES.THUMBNAIL"
+msgid "Thumbnail"
+msgstr "Thumbnail"
+
+msgctxt "STRINGS.BETTERSAVE.OPTIONS.MANUALGCMODE.NAME"
+msgid "Manual GC Management (Advanced)"
+msgstr "Manual GC Management (Advanced)"
+
+msgctxt "STRINGS.BETTERSAVE.OPTIONS.MANUALGCMODE.TOOLTIP"
+msgid "Auto (recommended): GCMode=Enabled, the game manages GC on its own; recommended for low-memory users. Manual (advanced): GCMode=Disabled, the mod's GcModeGate controls collection timing; may reduce in-game stutter on high-memory systems only. Restart required."
+msgstr "Auto (recommended): let the game manage GC on its own; recommended for low-memory users.\nManual (advanced): the mod controls collection timing, which may reduce in-game stutter (in practice the difference is small).\nRestart required."
+
+msgctxt "STRINGS.BETTERSAVE.OPTIONS.GCMAXTIMESLICE.NAME"
+msgid "gc-max-time-slice"
+msgstr "GC Pause Smoothing"
+
+msgctxt "STRINGS.BETTERSAVE.OPTIONS.GCMAXTIMESLICE.TOOLTIP"
+msgid "Writes gc-max-time-slice into OxygenNotIncluded_Data/boot.config. Range 1-6, default 3. Restart required."
+msgstr "Lower value: each frame's GC pause is shorter and the game feels smoother, but a full collection cycle takes longer overall.\nHigher value: GC completes faster overall, but per-frame hitches may feel slightly worse.\nDefault 3. Restart required."
+
+msgctxt "STRINGS.BETTERSAVE.OPTIONS.AUTOSAVEEXTRAS.NAME"
+msgid "Autosave extras"
+msgstr "Autosave extras"
+
+msgctxt "STRINGS.BETTERSAVE.OPTIONS.AUTOSAVEEXTRAS.TOOLTIP"
+msgid "Autosaves run in the background. Running GC and capturing a thumbnail together causes a noticeable hitch; if you pick \"Both\" expect a short freeze. Manual saves always run GC and always capture a thumbnail. Restart not required."
+msgstr "Manual saves always follow the game's original logic.\nPicking \"Both\" for autosaves matches the game's original logic — GC and thumbnail capture run together and cause the longest hitch.\nLow-memory users should pick \"GC only\", otherwise you may run out of memory.\nRestart not required."
+
+msgctxt "STRINGS.BETTERSAVE.OPTIONS.AUTOSAVEEXTRAS.NONE"
+msgid "None (fastest)"
+msgstr "None (fastest)"
+
+msgctxt "STRINGS.BETTERSAVE.OPTIONS.AUTOSAVEEXTRAS.GCONLY"
+msgid "GC only"
+msgstr "GC only (medium hitch)"
+
+msgctxt "STRINGS.BETTERSAVE.OPTIONS.AUTOSAVEEXTRAS.THUMBONLY"
+msgid "Thumbnail only"
+msgstr "Thumbnail only (medium hitch)"
+
+msgctxt "STRINGS.BETTERSAVE.OPTIONS.AUTOSAVEEXTRAS.BOTH"
+msgid "Both (will hitch)"
+msgstr "Both (worst hitch)"
