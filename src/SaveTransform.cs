@@ -50,6 +50,9 @@ namespace SaveOpt
         private static ISaveLoadableDetails[] detailBuf = new ISaveLoadableDetails[64];
         private static TypeInfo[] infoBuf = new TypeInfo[64];
 
+        // 新增：复用的组件列表，替换 GetComponents<KMonoBehaviour>() 的每次数组分配。
+        private static readonly List<KMonoBehaviour> componentScratch = new List<KMonoBehaviour>(64);
+
         private static readonly Dictionary<Type, TypeInfo> Types = new Dictionary<Type, TypeInfo>();
         private static Type lastType;
         private static TypeInfo lastInfo;
@@ -280,10 +283,13 @@ namespace SaveOpt
 
         private static void Rewrite(SaveLoadRoot root, BinaryWriter w, PooledStream ps)
         {
-            Component[] comps = root.GetComponents<KMonoBehaviour>();
-            if (comps == null) return;
+            // 改：GetComponents<KMonoBehaviour>() 返回新数组 → 复用共享 List
+            List<KMonoBehaviour> components = componentScratch;
+            components.Clear();
+            root.GetComponents<KMonoBehaviour>(components);
+            if (components.Count == 0) return;
 
-            int n = comps.Length;
+            int n = components.Count;
             if (writeBuf.Length < n)
             {
                 writeBuf = new bool[n];
@@ -295,7 +301,7 @@ namespace SaveOpt
             for (int i = 0; i < n; i++)
             {
                 writeBuf[i] = false;
-                Component c = comps[i];
+                Component c = components[i];
                 if (ReferenceEquals(c, null)) continue;
                 TypeInfo info = InfoOf(c.GetType());
                 if (info.Skipped) continue;
@@ -320,7 +326,7 @@ namespace SaveOpt
                     int slot = (int)ps.Position;
                     w.Write(0);
                     long bodyStart = ps.Position;
-                    WriteBody(comps[i], detailBuf[i], w);
+                    WriteBody(components[i], detailBuf[i], w);
                     int size = (int)(ps.Position - bodyStart);
                     byte[] buf = ps.GetBuffer();
                     buf[slot] = (byte)size;
@@ -333,7 +339,7 @@ namespace SaveOpt
                     long slot = w.BaseStream.Position;
                     w.Write(0);
                     long bodyStart = w.BaseStream.Position;
-                    WriteBody(comps[i], detailBuf[i], w);
+                    WriteBody(components[i], detailBuf[i], w);
                     long bodyEnd = w.BaseStream.Position;
                     int size = (int)(bodyEnd - bodyStart);
                     w.BaseStream.Position = slot;
