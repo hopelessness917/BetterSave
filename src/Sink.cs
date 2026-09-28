@@ -12,8 +12,11 @@ namespace SaveOpt
         internal byte[] Source;
         internal int SourceLength;
         internal string Path;
-        internal string PngFrom;
-        internal string PngTo;
+
+        // 【已停用】PngFrom / PngTo 用于"自动存档复制上一张 png"，
+        // 该功能已停用，两个字段不再被使用，保留仅作历史记录。
+        // internal string PngFrom;
+        // internal string PngTo;
     }
 
     internal static class Sink
@@ -55,12 +58,8 @@ namespace SaveOpt
             worker.Start();
         }
 
+        // ───────── 改后：4 参重载 ─────────
         internal static bool Enqueue(byte[] head, byte[] source, int sourceLength, string path)
-        {
-            return Enqueue(head, source, sourceLength, path, null, null);
-        }
-
-        internal static bool Enqueue(byte[] head, byte[] source, int sourceLength, string path, string pngFrom, string pngTo)
         {
             if ((head == null || head.Length == 0) && (source == null || sourceLength <= 0)) return false;
             lock (Gate)
@@ -70,15 +69,37 @@ namespace SaveOpt
                     Head = head,
                     Source = source,
                     SourceLength = sourceLength,
-                    Path = path,
-                    PngFrom = pngFrom,
-                    PngTo = pngTo
+                    Path = path
                 });
                 Idle.Reset();
             }
             Signal.Set();
             return true;
         }
+
+        // ───────── 改前：5 参重载（含 PngFrom / PngTo）─────────
+        // 【已停用】自动存档不再复制上一张 png，因此这个重载不再被调用。
+        // 保留仅作历史记录。
+        //
+        // internal static bool Enqueue(byte[] head, byte[] source, int sourceLength, string path, string pngFrom, string pngTo)
+        // {
+        //     if ((head == null || head.Length == 0) && (source == null || sourceLength <= 0)) return false;
+        //     lock (Gate)
+        //     {
+        //         Queue.Enqueue(new WriteJob
+        //         {
+        //             Head = head,
+        //             Source = source,
+        //             SourceLength = sourceLength,
+        //             Path = path,
+        //             PngFrom = pngFrom,
+        //             PngTo = pngTo
+        //         });
+        //         Idle.Reset();
+        //     }
+        //     Signal.Set();
+        //     return true;
+        // }
 
         private static void Loop()
         {
@@ -134,12 +155,16 @@ namespace SaveOpt
                 if (File.Exists(job.Path)) File.Delete(job.Path);
                 File.Move(tmp, job.Path);
 
-                step = "preview";
-                if (!string.IsNullOrEmpty(job.PngFrom) && !string.IsNullOrEmpty(job.PngTo)
-                    && job.PngFrom != job.PngTo && File.Exists(job.PngFrom))
-                {
-                    File.Copy(job.PngFrom, job.PngTo, true);
-                }
+                // ───────── 改前：这里有一段 preview 复制 ─────────
+                // 【已停用】自动存档不再复制上一张 png，因此这段被移除。
+                // 保留仅作历史记录。
+                //
+                // step = "preview";
+                // if (!string.IsNullOrEmpty(job.PngFrom) && !string.IsNullOrEmpty(job.PngTo)
+                //     && job.PngFrom != job.PngTo && File.Exists(job.PngFrom))
+                // {
+                //     File.Copy(job.PngFrom, job.PngTo, true);
+                // }
 
                 lock (Gate)
                 {

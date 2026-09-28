@@ -172,10 +172,14 @@ namespace SaveOpt
 
             if (SerializerPatch.VerifyMode) SerializerPatch.EndVerify("首次存档完成");
 
-            string pngTo;
-            string pngFrom = ThumbnailAsync.FinishSave(path, out pngTo);
-            if (pngFrom != null) FrameWatch.NotePreviewCopy();
-            if (!Sink.Enqueue(head, src, srcLen, path, pngFrom, pngTo)) SaveBuffer.Release(src);
+            // ───────── 改前（自动存档复制上一张缩略图）─────────
+            // string pngTo;
+            // string pngFrom = ThumbnailAsync.FinishSave(path, out pngTo);
+            // if (pngFrom != null) FrameWatch.NotePreviewCopy();
+            // if (!Sink.Enqueue(head, src, srcLen, path, pngFrom, pngTo)) SaveBuffer.Release(src);
+
+            // ───────── 改后（自动存档完全不碰缩略图，只用 4 参重载）─────────
+            if (!Sink.Enqueue(head, src, srcLen, path)) SaveBuffer.Release(src);
 
             Debug.Log("[更好的存档] 存档 #" + saved + " " + (isAuto ? "自动" : "手动") + " -> "
                 + Path.GetFileName(path) + " ｜ 主线程 " + total.ToString("F0") + " ms ｜ 未压缩 "
@@ -200,7 +204,6 @@ namespace SaveOpt
             return true;
         }
 
-        // ★★★ 唯一改动 ★★★
         public static bool GC_Prefix()
         {
             // 非存档窗口：照常放行。Boehm 自动回收不走这里，
@@ -213,7 +216,6 @@ namespace SaveOpt
             // 玩家可在选项里打开“自动存档时允许 GC”。
             return BetterSaveSettings.AutoSaveAllowGC;
         }
-        // ★★★ 改动结束 ★★★
 
         internal static double Now()
         {
