@@ -13,6 +13,7 @@ namespace SaveOpt
         private const double HitchMs = 250.0;
         private const long HitchLogCap = 200;
         private const int MaxRecords = 24;
+        private const double SaveWindowSec = 3.0;
 
         private static double lastFrame;
         private static bool tracking;
@@ -26,6 +27,10 @@ namespace SaveOpt
         private static long hitchCount;
         private static double hitchTotal;
         private static double hitchMax;
+        private static long hitchSaveCount;
+        private static double hitchSaveTotal;
+        private static long hitchFreeCount;
+        private static double hitchFreeTotal;
         private static double lastSaveAt;
         private static readonly double[] gapMs = new double[MaxRecords];
         private static readonly double[] gapAt = new double[MaxRecords];
@@ -61,8 +66,7 @@ namespace SaveOpt
             bool frameHook = false;
             try
             {
-                Type appType = AccessTools.TypeByName("App");
-                MethodInfo late = appType == null ? null : AccessTools.Method(appType, "LateUpdate");
+                MethodInfo late = AccessTools.Method(typeof(App), "LateUpdate");
                 if (late == null)
                 {
                     Debug.LogWarning("[更好的存档] 找不到 App.LateUpdate，体感窗口无法测量");
@@ -76,8 +80,7 @@ namespace SaveOpt
                         + (int)ThresholdMs + " ms 的卡顿）");
                 }
 
-                Type tl = AccessTools.TypeByName("Timelapser");
-                MethodInfo rap = tl == null ? null : AccessTools.Method(tl, "RenderAndPrint");
+                MethodInfo rap = AccessTools.Method(typeof(Timelapser), "RenderAndPrint");
                 if (rap != null)
                 {
                     harmony.Patch(rap,
@@ -90,9 +93,9 @@ namespace SaveOpt
                     Debug.LogWarning("[更好的存档] 找不到 Timelapser.RenderAndPrint，预览图计时段缺失");
                 }
 
-                PatchTimer(harmony, AccessTools.TypeByName("PlayerController"), "AllowDragging",
+                PatchTimer(harmony, typeof(PlayerController), "AllowDragging",
                     "AllowDragging_Prefix", "AllowDragging_Postfix", "PlayerController.AllowDragging");
-                PatchTimer(harmony, AccessTools.TypeByName("SaveActive"), "DeactivateSaveIndicator",
+                PatchTimer(harmony, typeof(SaveActive), "DeactivateSaveIndicator",
                     "Deactivate_Prefix", "Deactivate_Postfix", "SaveActive.DeactivateSaveIndicator");
 
                 captureWatch = AccessTools.Method(typeof(GameUtil), "IsCapturingTimeLapse") != null;
@@ -163,13 +166,24 @@ namespace SaveOpt
 
             if (gap * 1000.0 >= HitchMs)
             {
+                double ms = gap * 1000.0;
+                double since = lastSaveAt > 0 ? now - lastSaveAt : -1;
                 hitchCount++;
-                hitchTotal += gap * 1000.0;
-                if (gap * 1000.0 > hitchMax) hitchMax = gap * 1000.0;
+                hitchTotal += ms;
+                if (ms > hitchMax) hitchMax = ms;
+                if (since >= 0 && since <= SaveWindowSec)
+                {
+                    hitchSaveCount++;
+                    hitchSaveTotal += ms;
+                }
+                else
+                {
+                    hitchFreeCount++;
+                    hitchFreeTotal += ms;
+                }
                 if (hitchCount <= HitchLogCap)
                 {
-                    double since = lastSaveAt > 0 ? now - lastSaveAt : -1;
-                    Diag.Trace("[更好的存档] 全程卡顿 " + (gap * 1000.0).ToString("F0") + " ms ｜ 距上次存档结束 "
+                    Diag.Trace("[更好的存档] 全程卡顿 " + ms.ToString("F0") + " ms ｜ 距上次存档结束 "
                         + (since < 0 ? "?" : since.ToString("F0")) + " s（越大越说明发生在游玩中）｜ 回收计数 0/1/2 = "
                         + GC.CollectionCount(0) + "/" + GC.CollectionCount(1) + "/" + GC.CollectionCount(2)
                         + " ｜ 累计 " + hitchCount + " 次");
@@ -341,7 +355,10 @@ namespace SaveOpt
                 + captureCount + " 次，合计 " + captureTotal.ToString("F0") + " ms，最长 "
                 + captureMax.ToString("F0") + " ms ｜ 堆采样 " + heapSamples + " 次，首 "
                 + heapFirst + " MB，峰值 " + heapMax + " MB ｜ 全程卡顿 " + hitchCount
-                + " 次，合计 " + hitchTotal.ToString("F0") + " ms，最长 " + hitchMax.ToString("F0") + " ms";
+                + " 次，合计 " + hitchTotal.ToString("F0") + " ms，最长 " + hitchMax.ToString("F0") + " ms"
+                + "（存档后 " + (int)SaveWindowSec + " s 内 " + hitchSaveCount + " 次/合计 "
+                + hitchSaveTotal.ToString("F0") + " ms，游玩中 " + hitchFreeCount + " 次/合计 "
+                + hitchFreeTotal.ToString("F0") + " ms）";
         }
     }
 }

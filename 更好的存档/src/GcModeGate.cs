@@ -44,8 +44,7 @@ namespace SaveOpt
 
             try
             {
-                Type appType = AccessTools.TypeByName("App");
-                MethodInfo late = appType == null ? null : AccessTools.Method(appType, "LateUpdate");
+                MethodInfo late = AccessTools.Method(typeof(App), "LateUpdate");
                 if (late == null)
                 {
                     Debug.LogWarning("[更好的存档] 找不到 App.LateUpdate，GC 模式门控看门狗未挂载（仍有 finalizer 兜底）");

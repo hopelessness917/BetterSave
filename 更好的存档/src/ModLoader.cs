@@ -90,13 +90,13 @@ namespace SaveOpt
             Debug.Log(SaveBuffer.Summary());
             Debug.Log(ThumbnailAsync.Summary());
             Debug.Log(SaveTransform.Summary());
+            Debug.Log(FrameWatch.Summary());
+            Debug.Log(GcTuner.Summary());
             if (Diag.Verbose)
             {
                 Debug.Log(SerializerPatch.Summary());
                 Debug.Log(IsDefinedCache.Summary());
                 Debug.Log(FieldPlanner.Summary());
-                Debug.Log(GcTuner.Summary());
-                Debug.Log(FrameWatch.Summary());
             }
         }
     }
