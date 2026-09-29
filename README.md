@@ -50,6 +50,64 @@
 | `SerializeData` 热路径三处减法（FieldPlan 数组缓存、去计数器、绕开 Harmony 跳板） | −43–48 ms（−5%） |
 | 跳过存档后的 `GC.Collect()` | 约 −1100 ms，但回收只是推迟到 1–2 秒后（520–610 ms），**净省约 550 ms** |
 
+## 编译与构建
+
+### 前置条件
+
+| 需要 | 说明 |
+|---|---|
+| **VS 自带的 MSBuild** | 老式 csproj + .NET Framework 4.8，**`dotnet msbuild` 不行** |
+| **缺氧本体** | 用于引用游戏程序集 |
+| **[官方 PLib 4.25](https://github.com/peterhaneve/ONIMods/releases/tag/PLib4.25)** | 下载 `PLib.dll` 放进 `更好的存档\libs\`（MIT，许可证见 `libs\PLib.LICENSE.txt`） |
+| ILRepack 2.0.48 | NuGet 自动还原，无需手动 |
+
+### 配置本地路径
+
+复制 `更好的存档\Directory.Build.props.default` 为 **`Directory.Build.props.user`**（已在 `.gitignore` 里），
+再把 `GameLibsFolder` / `ModFolder` 改成你自己机器上的路径。两个文件二选一加载：
+`.user` 存在就用 `.user`，否则用 `.default`。`ModFolder` 留空 = 只编译不部署。
+
+### 编译
+
+```bat
+msbuild 更好的存档\更好的存档.csproj /t:Restore
+msbuild 更好的存档\更好的存档.csproj /p:Configuration=Release
+```
+
+`/t:Restore` 只需第一次（还原 ILRepack）。
+
+产物与自动部署：
+
+```
+bin\Release\更好的存档.dll            未合并（仅编译产物）
+bin\Release\merged\更好的存档.dll     ILRepack 合并 + PLib 内部化后的最终 DLL
+        ↓ 构建自动复制
+<ModFolder>\BetterSave.dll            重命名为游戏认的文件名
+<ModFolder>\mod.yaml  mod_info.yaml   构建时生成（不要手工改）
+<ModFolder>\translations\*.po         选项面板的中英文案
+```
+
+### 版本号
+
+**只改 csproj 里的 `<ModVersion>` 一处**，构建会自动同步到：
+
+- 程序集 `AssemblyFileVersion`（选项面板显示的「模组版本」）
+- `mod_info.yaml` 的 `version`
+
+### 构建时进行检查
+
+| 检查 | 行为 |
+|---|---|
+| 找不到 `libs\PLib.dll` | **报错**并给出下载地址 |
+| 找不到 `translations\*.po` | **报错**——否则选项面板会显示 `STRINGS.*` 原始键名 |
+
+### 测试错误（会坏档）
+
+1.  **`Manager.GetSerializationTemplate()` 有注册副作用。**
+   它不是纯查找——它会把类型登记进序列化目录，而 `Manager.SerializeDirectory()`
+   写出的类型目录就靠这张表。**任何「省掉这次调用」的优化都会让存档的类型目录不完整、
+   读档时报 `no such class exists`。** 另注意 `Manager.Clear()` 在每次存档开头都会清空这张表。
+
 ## 安全设计
 
 1. **零成本回退**：`SaveTransform` 用 Harmony **prefix 返回 `true`/`false`** 控制是否跳过原版；
@@ -60,7 +118,7 @@
 3. **接管后兜底**：替换版抛异常 → 截断回对象起点 → 原版接手写完这次 → 永久停用。
 4. **字段级快写**：每个字段首次使用做逐字节双路比对，不一致就永久回退该字段。
 5. **反射名解析失败 → 直接不挂载**并报错。
-6. **存档格式逐字节不变** ⇒ 原版兼容、随时可卸载、不会读不了档。
+6. **存档格式逐字节不变** ⇒ 原版兼容、随时可卸载、保证存档安全。
 
 ## 关键点
 
