@@ -85,8 +85,24 @@ namespace SaveOpt
         private static long calls;
         private static long directCalls;
 
-        private static readonly ConditionalWeakTable<KSerialization.SerializationTemplate, FieldPlan[]> Plans =
-            new ConditionalWeakTable<KSerialization.SerializationTemplate, FieldPlan[]>();
+        private sealed class TemplatePlan
+        {
+            internal KSerialization.SerializationTemplate Template;
+            internal FieldPlan[] Plans;
+            internal KSerialization.TypeInfo[] TypeInfos;
+        }
+
+        private static readonly Dictionary<Type, TemplatePlan> ByType = new Dictionary<Type, TemplatePlan>();
+        private static readonly Dictionary<KSerialization.SerializationTemplate, TemplatePlan> ByTemplate =
+            new Dictionary<KSerialization.SerializationTemplate, TemplatePlan>();
+
+        private static int currentMask = -1;
+
+        internal static void ClearPlans()
+        {
+            ByType.Clear();
+            ByTemplate.Clear();
+        }
 
         internal static bool VerifyMode { get { return verify; } }
         internal static long Verified { get { return verified; } }
@@ -103,8 +119,42 @@ namespace SaveOpt
                 return false;
             }
             harmony.Patch(target, prefix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(SerializerPatch), "Prefix")));
+            PatchMask(harmony, "SetTypeInfoMask");
+            PatchMask(harmony, "ClearTypeInfoMask");
             Diag.Trace("[更好的存档] SerializationTemplate.SerializeData 已接管（编译委托替代逐字段反射，首轮存档做双路校验）");
             return true;
+        }
+
+        private static void PatchMask(HarmonyLib.Harmony harmony, string name)
+        {
+            try
+            {
+                int hit = 0;
+                bool isSet = name == "SetTypeInfoMask";
+                foreach (MethodInfo m in typeof(KSerialization.Helper).GetMethods(
+                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static))
+                {
+                    if (m.Name != name) continue;
+                    harmony.Patch(m, prefix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(SerializerPatch),
+                        isSet ? "SetMask_Prefix" : "ClearMask_Prefix")));
+                    hit++;
+                }
+                if (hit == 0) Debug.LogWarning("[更好的存档] 找不到 Helper." + name + "，掩码变化时字段计划不会重建");
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning("[更好的存档] Helper." + name + " 挂载失败: " + e.Message);
+            }
+        }
+
+        public static void SetMask_Prefix(int __0)
+        {
+            currentMask = __0;
+        }
+
+        public static void ClearMask_Prefix()
+        {
+            currentMask = -1;
         }
 
         internal static void EndVerify(string reason)
@@ -118,63 +168,83 @@ namespace SaveOpt
         public static bool Prefix(KSerialization.SerializationTemplate __instance, object obj, System.IO.BinaryWriter writer)
         {
             calls++;
-            return Body(__instance, obj, writer);
+            Run(PlanFor(__instance), obj, writer);
+            return false;
         }
 
-        private static FieldPlan[] PlansFor(KSerialization.SerializationTemplate t)
+        private static TemplatePlan PlanFor(KSerialization.SerializationTemplate t)
         {
+            if (t == null) return new TemplatePlan();
+
+            TemplatePlan tp;
+            if (ByTemplate.TryGetValue(t, out tp)) return tp;
+
+            tp = new TemplatePlan();
+            tp.Template = t;
+
             var fields = t.serializableFields;
             int n = fields == null ? 0 : fields.Count;
+            tp.Plans = new FieldPlan[n];
+            tp.TypeInfos = new KSerialization.TypeInfo[n];
+            for (int i = 0; i < n; i++)
+            {
+                tp.TypeInfos[i] = fields[i].typeInfo;
+                tp.Plans[i] = FieldPlanner.For(fields[i].field, fields[i].typeInfo, currentMask);
+            }
 
-            FieldPlan[] plans;
-            if (Plans.TryGetValue(t, out plans) && plans.Length == n) return plans;
+            ByTemplate[t] = tp;
+            if (t.serializableType != null) ByType[t.serializableType] = tp;
+            return tp;
+        }
 
-            plans = new FieldPlan[n];
-            for (int i = 0; i < n; i++) plans[i] = FieldPlanner.For(fields[i].field, fields[i].typeInfo);
-
-            Plans.Remove(t);
-            Plans.Add(t, plans);
-            return plans;
+        internal static void SlowField(FieldPlan plan, KSerialization.TypeInfo ti, object obj, BinaryWriter writer)
+        {
+            if (plan.Fast != null)
+            {
+                if (!plan.Checked) FieldPlanner.Check(plan, obj, ti);
+                if (plan.Trusted)
+                {
+                    plan.Fast(obj, writer);
+                    return;
+                }
+            }
+            object value = plan.Getter(obj);
+            if (verify) value = VerifyField(plan.Field, obj, value);
+            KSerialization.Helper.WriteValue(writer, ti, value);
         }
 
         internal static void WriteTypeless(object obj, BinaryWriter writer)
         {
             directCalls++;
-            KSerialization.SerializationTemplate t = KSerialization.Manager.GetSerializationTemplate(obj.GetType());
-            Body(t, obj, writer);
+            Type type = obj.GetType();
+            TemplatePlan tp;
+            if (!ByType.TryGetValue(type, out tp))
+            {
+                tp = PlanFor(KSerialization.Manager.GetSerializationTemplate(type));
+                ByType[type] = tp;
+            }
+            Run(tp, obj, writer);
         }
 
-        private static bool Body(KSerialization.SerializationTemplate __instance, object obj, System.IO.BinaryWriter writer)
+        private static void Run(TemplatePlan tp, object obj, System.IO.BinaryWriter writer)
         {
+            KSerialization.SerializationTemplate __instance = tp.Template;
             if (__instance.onSerializing != null) __instance.onSerializing.Invoke(obj, null);
 
             bool check = verify;
-            var fields = __instance.serializableFields;
-            if (fields != null)
+            FieldPlan[] plans = tp.Plans;
+            if (plans != null && plans.Length > 0)
             {
-                FieldPlan[] plans = PlansFor(__instance);
-                for (int i = 0; i < fields.Count; i++)
+                for (int i = 0; i < plans.Length; i++)
                 {
-                    KSerialization.SerializationTemplate.SerializationField sf = fields[i];
-                    FieldPlan plan = plans[i];
                     try
                     {
-                        if (plan.Fast != null)
-                        {
-                            if (!plan.Checked) FieldPlanner.Check(plan, obj, sf.typeInfo);
-                            if (plan.Trusted)
-                            {
-                                plan.Fast(obj, writer);
-                                continue;
-                            }
-                        }
-                        object value = plan.Getter(obj);
-                        if (check) value = VerifyField(sf.field, obj, value);
-                        KSerialization.Helper.WriteValue(writer, sf.typeInfo, value);
+                        SlowField(plans[i], tp.TypeInfos[i], obj, writer);
                     }
                     catch (Exception inner)
                     {
-                        string text = string.Format("Error occurred while serializing field {0} on template {1}", sf.field.Name, __instance.serializableType.Name);
+                        string text = string.Format("Error occurred while serializing field {0} on template {1}",
+                            plans[i].Field.Name, __instance.serializableType.Name);
                         Debug.LogError(text);
                         throw new ArgumentException(text, inner);
                     }
@@ -204,7 +274,6 @@ namespace SaveOpt
 
             if (__instance.customSerialize != null) __instance.customSerialize.Invoke(obj, new object[] { writer });
             if (__instance.onSerialized != null) __instance.onSerialized.Invoke(obj, null);
-            return false;
         }
 
         private static object VerifyField(FieldInfo f, object obj, object fromDelegate)
