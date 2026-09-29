@@ -3,12 +3,14 @@ using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
 using KMod;
+using PeterHan.PLib.Core;
+using PeterHan.PLib.Options;
 
 namespace SaveOpt
 {
     internal static class Diag
     {
-        internal static readonly bool Verbose = false;
+        internal static bool Verbose;
 
         internal static void Trace(string message)
         {
@@ -27,7 +29,12 @@ namespace SaveOpt
         {
             try
             {
+                base.OnLoad(harmony);
                 Sink.Start();
+                PUtil.InitLibrary(true);
+                ModLocalization.Load(this.mod);
+                new POptions().RegisterOptions(this, typeof(BetterSaveOptions));
+                ModOptions.Load();
                 InstallQuitHook(harmony);
 
                 List<string> mounted = new List<string>();
@@ -65,6 +72,14 @@ namespace SaveOpt
         {
             try
             {
+                UnityEngine.Application.quitting += DumpSummaries;
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning("[更好的存档] Application.quitting 订阅失败: " + e.Message);
+            }
+            try
+            {
                 MethodInfo quit = AccessTools.Method(typeof(Game), "OnApplicationQuit");
                 if (quit == null)
                 {
@@ -79,8 +94,17 @@ namespace SaveOpt
             }
         }
 
+        private static bool quitDumped;
+
         public static void OnApplicationQuit_Prefix()
         {
+            DumpSummaries();
+        }
+
+        private static void DumpSummaries()
+        {
+            if (quitDumped) return;
+            quitDumped = true;
             Sink.Flush(15000);
             Sink.Stop();
             ThumbnailAsync.Flush(5000);

@@ -111,9 +111,25 @@
       <HintPath>$(GameLibsFolder)\UnityEngine.UnityWebRequestTextureModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="UnityEngine.TextCoreFontEngineModule">
+      <HintPath>$(GameLibsFolder)\UnityEngine.TextCoreFontEngineModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="netstandard">
+      <HintPath>$(GameLibsFolder)\netstandard.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="PLib">
+      <HintPath>libs\PLib.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
   <ItemGroup>
     <Compile Include="src\ModLoader.cs" />
+    <Compile Include="src\STRINGS.cs" />
+    <Compile Include="src\ModLocalization.cs" />
+    <Compile Include="src\ModOptions.cs" />
+    <Compile Include="src\BetterSaveOptions.cs" />
     <Compile Include="src\SavePatch.cs" />
     <Compile Include="src\SerializerPatch.cs" />
     <Compile Include="src\FieldPlan.cs" />
@@ -128,10 +144,40 @@
     <Compile Include="src\SaveTransform.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="ILRepack" Version="2.0.48" GeneratePathProperty="true" PrivateAssets="all" />
+  </ItemGroup>
+  <ItemGroup>
+    <TranslationFiles Include="translations\*.po" />
+  </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
-  <Target Name="CopyModToGame" AfterTargets="Build" Condition="'$(Configuration)' == 'Release' And '$(ModFolder)' != ''">
+  <Target Name="MergePLib" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
+    <PropertyGroup>
+      <_MergedDir>$(MSBuildProjectDirectory)\$(OutputPath)merged</_MergedDir>
+      <_ILRepackExe>$(PkgILRepack)\tools\ILRepack.exe</_ILRepackExe>
+      <_MainDll>$([System.IO.Path]::GetFullPath('$(TargetPath)'))</_MainDll>
+      <_PLibDll>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)\libs\PLib.dll'))</_PLibDll>
+      <_OutDll>$([System.IO.Path]::GetFullPath('$(_MergedDir)\$(AssemblyName).dll'))</_OutDll>
+      <_AbsOutputPath>$([System.IO.Path]::GetFullPath('$(TargetDir)').TrimEnd('\'))</_AbsOutputPath>
+    </PropertyGroup>
+    <Error Condition="!Exists('$(_ILRepackExe)')" Text="找不到 ILRepack.exe（$(PkgILRepack)）。请先用 msbuild /t:Restore 还原 NuGet 包。" />
+    <Error Condition="!Exists('$(_PLibDll)')" Text="找不到 libs\PLib.dll。请从 https://github.com/peterhaneve/ONIMods/releases/tag/PLib4.25 下载官方 PLib 4.25 放进 libs\ 目录（许可证见 libs\PLib.LICENSE.txt）。" />
+    <MakeDir Directories="$(_MergedDir)" />
+    <Exec Command="&quot;$(_ILRepackExe)&quot; /out:&quot;$(_OutDll)&quot; /internalize /parallel &quot;$(_MainDll)&quot; &quot;$(_PLibDll)&quot; /lib:&quot;$(_AbsOutputPath)&quot; /lib:&quot;$(GameLibsFolder)&quot;"
+          WorkingDirectory="$(PkgILRepack)\tools" ConsoleToMSBuild="true" />
+    <Message Importance="high" Text="已把 PLib 合并进 $(_OutDll)" />
+  </Target>
+  <Target Name="CopyModToGame" AfterTargets="MergePLib" Condition="'$(Configuration)' == 'Release' And '$(ModFolder)' != ''">
+    <PropertyGroup>
+      <_DeploySource Condition="Exists('$(MSBuildProjectDirectory)\$(OutputPath)merged\$(AssemblyName).dll')">$(MSBuildProjectDirectory)\$(OutputPath)merged\$(AssemblyName).dll</_DeploySource>
+      <_DeploySource Condition="'$(_DeploySource)' == ''">$(TargetPath)</_DeploySource>
+    </PropertyGroup>
     <MakeDir Directories="$(ModFolder)" />
-    <Copy SourceFiles="$(TargetPath)" DestinationFiles="$(ModFolder)\BetterSave.dll" />
-    <Message Importance="high" Text="已部署到 $(ModFolder)\BetterSave.dll" />
+    <Copy SourceFiles="$(_DeploySource)" DestinationFiles="$(ModFolder)\BetterSave.dll" />
+    <Message Importance="high" Text="已部署到 $(ModFolder)\BetterSave.dll（来源 $(_DeploySource)）" />
+    <Error Condition="'@(TranslationFiles)' == ''" Text="找不到 translations\*.po。缺了它们，模组选项面板会直接显示 STRINGS.* 原始键名（而不是中/英文案）。" />
+    <MakeDir Directories="$(ModFolder)\translations" />
+    <Copy SourceFiles="@(TranslationFiles)" DestinationFolder="$(ModFolder)\translations" SkipUnchangedFiles="true" />
+    <Message Importance="high" Text="已部署 @(TranslationFiles->'%(Filename)%(Extension)', ' ') 到 $(ModFolder)\translations（缺了它们面板会显示原始键名）" />
   </Target>
 </Project>

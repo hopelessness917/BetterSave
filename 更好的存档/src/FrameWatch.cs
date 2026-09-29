@@ -31,6 +31,13 @@ namespace SaveOpt
         private static double hitchSaveTotal;
         private static long hitchFreeCount;
         private static double hitchFreeTotal;
+        private static long hitchStartCount;
+        private static double hitchStartTotal;
+        private static readonly double[] topMs = new double[3];
+        private static readonly double[] topSince = new double[3];
+        private static readonly long[] topHeap = new long[3];
+        private static readonly bool[] topGc = new bool[3];
+        private static int lastC0;
         private static double lastSaveAt;
         private static readonly double[] gapMs = new double[MaxRecords];
         private static readonly double[] gapAt = new double[MaxRecords];
@@ -144,6 +151,9 @@ namespace SaveOpt
             double gap = now - lastFrame;
             lastFrame = now;
             totalFrames++;
+            int c0 = GC.CollectionCount(0);
+            bool collected = c0 != lastC0;
+            lastC0 = c0;
 
             if (lastHeapLog <= 0) lastHeapLog = now;
             if (now - lastHeapLog >= 30.0)
@@ -168,10 +178,16 @@ namespace SaveOpt
             {
                 double ms = gap * 1000.0;
                 double since = lastSaveAt > 0 ? now - lastSaveAt : -1;
+                long heapMb = GC.GetTotalMemory(false) / 1048576;
                 hitchCount++;
                 hitchTotal += ms;
                 if (ms > hitchMax) hitchMax = ms;
-                if (since >= 0 && since <= SaveWindowSec)
+                if (since < 0)
+                {
+                    hitchStartCount++;
+                    hitchStartTotal += ms;
+                }
+                else if (since <= SaveWindowSec)
                 {
                     hitchSaveCount++;
                     hitchSaveTotal += ms;
@@ -181,12 +197,28 @@ namespace SaveOpt
                     hitchFreeCount++;
                     hitchFreeTotal += ms;
                 }
+                if (ms > topMs[0])
+                {
+                    topMs[2] = topMs[1]; topSince[2] = topSince[1]; topHeap[2] = topHeap[1]; topGc[2] = topGc[1];
+                    topMs[1] = topMs[0]; topSince[1] = topSince[0]; topHeap[1] = topHeap[0]; topGc[1] = topGc[0];
+                    topMs[0] = ms; topSince[0] = since; topHeap[0] = heapMb; topGc[0] = collected;
+                }
+                else if (ms > topMs[1])
+                {
+                    topMs[2] = topMs[1]; topSince[2] = topSince[1]; topHeap[2] = topHeap[1]; topGc[2] = topGc[1];
+                    topMs[1] = ms; topSince[1] = since; topHeap[1] = heapMb; topGc[1] = collected;
+                }
+                else if (ms > topMs[2])
+                {
+                    topMs[2] = ms; topSince[2] = since; topHeap[2] = heapMb; topGc[2] = collected;
+                }
                 if (hitchCount <= HitchLogCap)
                 {
-                    Diag.Trace("[更好的存档] 全程卡顿 " + ms.ToString("F0") + " ms ｜ 距上次存档结束 "
-                        + (since < 0 ? "?" : since.ToString("F0")) + " s（越大越说明发生在游玩中）｜ 回收计数 0/1/2 = "
-                        + GC.CollectionCount(0) + "/" + GC.CollectionCount(1) + "/" + GC.CollectionCount(2)
-                        + " ｜ 累计 " + hitchCount + " 次");
+                    string line = "[更好的存档] 全程卡顿 " + ms.ToString("F0") + " ms ｜ 距上次存档结束 "
+                        + (since < 0 ? "无" : since.ToString("F0") + " s") + " ｜ 堆 " + heapMb
+                        + " MB ｜ " + (collected ? "有回收" : "无回收") + " ｜ 累计 " + hitchCount + " 次";
+                    if (ms >= 400.0) Debug.Log(line);
+                    else Diag.Trace(line);
                 }
                 else if (hitchCount == HitchLogCap + 1)
                 {
@@ -349,6 +381,19 @@ namespace SaveOpt
                 + deactCalls + " 次/" + deactTotal.ToString("F0") + " ms）");
         }
 
+        private static string TopText()
+        {
+            string s = "";
+            for (int i = 0; i < topMs.Length; i++)
+            {
+                if (topMs[i] <= 0) break;
+                s += (i > 0 ? "、" : "") + topMs[i].ToString("F0") + " ms(距存档 "
+                    + (topSince[i] < 0 ? "无" : topSince[i].ToString("F0") + " s")
+                    + "，堆 " + topHeap[i] + " MB，" + (topGc[i] ? "有回收" : "无回收") + ")";
+            }
+            return s.Length == 0 ? "无" : s;
+        }
+
         internal static string Summary()
         {
             return "[更好的存档] 体感窗口测量：全程逐帧 " + totalFrames + " 帧 ｜ 预览捕获 "
@@ -356,9 +401,11 @@ namespace SaveOpt
                 + captureMax.ToString("F0") + " ms ｜ 堆采样 " + heapSamples + " 次，首 "
                 + heapFirst + " MB，峰值 " + heapMax + " MB ｜ 全程卡顿 " + hitchCount
                 + " 次，合计 " + hitchTotal.ToString("F0") + " ms，最长 " + hitchMax.ToString("F0") + " ms"
-                + "（存档后 " + (int)SaveWindowSec + " s 内 " + hitchSaveCount + " 次/合计 "
-                + hitchSaveTotal.ToString("F0") + " ms，游玩中 " + hitchFreeCount + " 次/合计 "
-                + hitchFreeTotal.ToString("F0") + " ms）";
+                + "（启动期 " + hitchStartCount + " 次/合计 "
+                + hitchStartTotal.ToString("F0") + " ms，存档后 " + (int)SaveWindowSec + " s 内 "
+                + hitchSaveCount + " 次/合计 " + hitchSaveTotal.ToString("F0")
+                + " ms，游玩中 " + hitchFreeCount + " 次/合计 "
+                + hitchFreeTotal.ToString("F0") + " ms）｜ 最长三次 " + TopText();
         }
     }
 }

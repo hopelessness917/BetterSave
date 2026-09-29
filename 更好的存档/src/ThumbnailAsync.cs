@@ -21,15 +21,8 @@ namespace SaveOpt
 
     internal static class ThumbnailAsync
     {
-        private const float PreviewScale = 0.1f;
-
         private static readonly byte[] Sentinel = new byte[0];
 
-        private static AccessTools.FieldRef<Timelapser, Vector2Int> previewRes;
-        private static Vector2Int previewOriginal;
-        private static Vector2Int previewApplied;
-        private static bool previewHave;
-        private static long previewShrinks;
         private static bool skipThisSave;
         private static string lastPngPath;
         private static bool haveSource;
@@ -99,7 +92,7 @@ namespace SaveOpt
                 return false;
             }
 
-            ApplyPreviewScale(harmony);
+            ApplyPreviewSkip(harmony);
 
             Start();
             enabled = true;
@@ -110,34 +103,27 @@ namespace SaveOpt
 
         private static int swappedInjected;
 
-        private static void ApplyPreviewScale(HarmonyLib.Harmony harmony)
+        private static void ApplyPreviewSkip(HarmonyLib.Harmony harmony)
         {
             try
             {
-                MethodInfo refresh = AccessTools.Method(typeof(Timelapser), "RefreshRenderTextureSize");
                 MethodInfo colony = AccessTools.Method(typeof(Timelapser), "SaveColonyPreview");
-                if (refresh == null || colony == null)
+                if (colony == null)
                 {
-                    Debug.LogWarning("[更好的存档] 找不到预览图相关方法，预览图跳渲未启用");
-                    return;
-                }
-                previewRes = AccessTools.FieldRefAccess<Timelapser, Vector2Int>("previewScreenshotResolution");
-                if (previewRes == null)
-                {
-                    Debug.LogWarning("[更好的存档] 找不到 Timelapser.previewScreenshotResolution，预览图未启用");
+                    Debug.LogWarning("[更好的存档] 找不到 Timelapser.SaveColonyPreview，预览图复用未启用");
                     return;
                 }
 
                 harmony.Patch(colony, prefix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(ThumbnailAsync), "SaveColonyPreview_Prefix")));
-                harmony.Patch(refresh, prefix: new HarmonyLib.HarmonyMethod(AccessTools.Method(typeof(ThumbnailAsync), "Refresh_Prefix")));
 
-                Diag.Trace("[更好的存档] 预览图只在开局第一次存档时捕获一次，之后每次存档都直接复制上一周期那张 png。"
-                    + "源是上一周期而不是开局那张，因此永远落在自动存档最近 10 个槽位内，不会被轮转删除。"
-                    + "实测捕获开销 1.3-1.4 s 且与分辨率无关（成本在两次完整相机渲染与相机移动触发的全图重新剔除）");
+                Diag.Trace("[更好的存档] 预览图：默认本局只在首次存档时真实渲染一张，之后每次存档直接复制它；"
+                    + "把模组选项里的「真实截图」设为开则每次存档都重新渲染（预览图永远最新）。"
+                    + "实测单次捕获约 0.45 s，且与渲染分辨率无关——成本在两次完整相机渲染与相机移动触发的全图重新剔除，"
+                    + "所以不再缩放预览分辨率（缩放只损失画质、不省时间）");
             }
             catch (Exception e)
             {
-                Debug.LogWarning("[更好的存档] 预览图跳渲挂载失败: " + e.Message);
+                Debug.LogWarning("[更好的存档] 预览图复用挂载失败: " + e.Message);
             }
         }
 
@@ -150,22 +136,30 @@ namespace SaveOpt
             catch (Exception) { return true; }
             if (string.IsNullOrEmpty(target)) return true;
 
-            if (lastPngPath != null)
+            if (lastPngPath == null)
+            {
+                lastPngPath = target;
+                previewCaptures++;
+                Debug.Log("[更好的存档] 预览图首次捕获（本局至少需要一张源图，「真实截图」关时也只此一次）：" + __0);
+                return true;
+            }
+
+            if (!ModOptions.RealScreenshot)
             {
                 skipThisSave = true;
                 haveSource = File.Exists(lastPngPath);
                 previewSkips++;
                 if (previewSkips == 1)
                 {
-                    Debug.Log("[更好的存档] 预览图捕获已跳过：整个捕获不做，直接复制上一周期 "
-                        + Path.GetFileName(lastPngPath));
+                    Debug.Log("[更好的存档] 真实截图=关，预览图直接复制上一张 "
+                        + Path.GetFileName(lastPngPath) + "（省下一次全图渲染）");
                 }
                 return false;
             }
 
             lastPngPath = target;
             previewCaptures++;
-            Debug.Log("[更好的存档] 预览图首次捕获（本局仅此一次）：" + __0);
+            Debug.Log("[更好的存档] 真实截图=开，预览图重新捕获：" + __0);
             return true;
         }
 
@@ -193,31 +187,6 @@ namespace SaveOpt
             lastPngPath = to;
             previewCopies++;
             return from;
-        }
-
-        public static void Refresh_Prefix(Timelapser __instance)
-        {
-            if (previewRes == null) return;
-            Vector2Int cur = previewRes(__instance);
-            if (!previewHave || cur != previewApplied)
-            {
-                previewOriginal = cur;
-                previewHave = true;
-            }
-            int w = Mathf.Max(64, (int)(previewOriginal.x * PreviewScale));
-            int h = Mathf.Max(64, (int)(previewOriginal.y * PreviewScale));
-            Vector2Int scaled = new Vector2Int(w, h);
-            if (cur != scaled)
-            {
-                previewRes(__instance) = scaled;
-                previewShrinks++;
-                if (previewShrinks == 1)
-                {
-                    Diag.Trace("[更好的存档] 预览图分辨率 " + previewOriginal.x + " x " + previewOriginal.y
-                        + " -> " + w + " x " + h);
-                }
-                previewApplied = scaled;
-            }
         }
 
         public static IEnumerable<CodeInstruction> Transpile(IEnumerable<CodeInstruction> instructions)

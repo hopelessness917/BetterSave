@@ -11,8 +11,16 @@ namespace SaveOpt
     {
         private const int ProbeMb = 64;
         private const int CheckEveryFrames = 5;
-        private static readonly double ForceSeconds = 600.0;
-        private static readonly double StuckSeconds = 1800.0;
+        private static double ForceSeconds
+        {
+            get { return ModOptions.ReleaseMinutes * 60.0; }
+        }
+
+        private static double StuckSeconds
+        {
+            get { return ForceSeconds + 900.0; }
+        }
+
         private static readonly double MinReleaseGapSeconds = 5.0;
 
         private static bool supported;
@@ -39,6 +47,13 @@ namespace SaveOpt
 
         internal static bool Apply(HarmonyLib.Harmony harmony)
         {
+            if (ModOptions.GcAuto)
+            {
+                Debug.Log("[更好的存档] GC 门控：按配置交给游戏管理（不按住 Disabled，也不跳过回收）。"
+                    + "堆峰值更低，但回收更频繁、卡顿次数更多——低内存用户适用");
+                return false;
+            }
+
             Detect();
             if (!supported) return false;
 

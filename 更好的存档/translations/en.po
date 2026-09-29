@@ -1,0 +1,55 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: BetterSave\n"
+"Language: en\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+msgctxt "STRINGS.BETTERSAVE.OPTIONS.GCMODE.NAME"
+msgid "1. GC Mode"
+msgstr "1. GC Mode"
+
+msgctxt "STRINGS.BETTERSAVE.OPTIONS.GCMODE.TOOLTIP"
+msgid "Manual: this mod holds off managed collection and releases it on the timer set below (recommended).\nAuto: no intervention at all - the game manages GC by itself. Lower heap peak, but collections happen more often and stutter more; suited to low-memory machines.\nOptions 2 and 3 have no effect when Auto is selected. Changing this requires a game restart."
+msgstr "Manual: this mod holds off managed collection and releases it on the timer set below (recommended).\nAuto: no intervention at all - the game manages GC by itself. Lower heap peak, but collections happen more often and stutter more; suited to low-memory machines.\nOptions 2 and 3 have no effect when Auto is selected. Changing this requires a game restart."
+
+msgctxt "STRINGS.BETTERSAVE.OPTIONS.GCMODE.MANUAL"
+msgid "Manual (mod-managed, recommended)"
+msgstr "Manual (mod-managed, recommended)"
+
+msgctxt "STRINGS.BETTERSAVE.OPTIONS.GCMODE.AUTO"
+msgid "Auto (game-managed)"
+msgstr "Auto (game-managed)"
+
+msgctxt "STRINGS.BETTERSAVE.OPTIONS.GCRELEASEMINUTES.NAME"
+msgid "2. GC Release Interval (minutes)"
+msgstr "2. GC Release Interval (minutes)"
+
+msgctxt "STRINGS.BETTERSAVE.OPTIONS.GCRELEASEMINUTES.TOOLTIP"
+msgid "1-20 minutes. Shorter: lower heap and smaller pauses, but more of them.\nLonger: fewer pauses, but each one is larger. No effect when Auto is selected."
+msgstr "1-20 minutes. Shorter: lower heap and smaller pauses, but more of them.\nLonger: fewer pauses, but each one is larger. No effect when Auto is selected."
+
+msgctxt "STRINGS.BETTERSAVE.OPTIONS.COLLECTAFTERSAVE.NAME"
+msgid "3. Collect GC After Saving"
+msgstr "3. Collect GC After Saving"
+
+msgctxt "STRINGS.BETTERSAVE.OPTIONS.COLLECTAFTERSAVE.TOOLTIP"
+msgid "Off: skip the game's own GC.Collect() at the end of every save, which keeps the save window short (recommended).\nOn: allow it - a cleaner heap, but one extra pause after each save. No effect when Auto is selected."
+msgstr "Off: skip the game's own GC.Collect() at the end of every save, which keeps the save window short (recommended).\nOn: allow it - a cleaner heap, but one extra pause after each save. No effect when Auto is selected."
+
+msgctxt "STRINGS.BETTERSAVE.OPTIONS.REALSCREENSHOT.NAME"
+msgid "4. Real Screenshot"
+msgstr "4. Real Screenshot"
+
+msgctxt "STRINGS.BETTERSAVE.OPTIONS.REALSCREENSHOT.TOOLTIP"
+msgid "On: re-render the preview image on every save, so it is always up to date (about 0.45 s each).\nOff: render once on the first save of the session and copy it for the rest (recommended default)."
+msgstr "On: re-render the preview image on every save, so it is always up to date (about 0.45 s each).\nOff: render once on the first save of the session and copy it for the rest (recommended default)."
+
+msgctxt "STRINGS.BETTERSAVE.OPTIONS.VERBOSE.NAME"
+msgid "5. Diagnostic Log"
+msgstr "5. Diagnostic Log"
+
+msgctxt "STRINGS.BETTERSAVE.OPTIONS.VERBOSE.TOOLTIP"
+msgid "For developer use."
+msgstr "For developer use."

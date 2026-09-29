@@ -92,6 +92,8 @@ namespace SaveOpt
         private static volatile bool inSave;
         private static long saved;
         private static double lastMs;
+        private static long gcAllowed;
+        private static long gcSkipped;
 
         internal static bool InSave { get { return inSave; } }
 
@@ -196,7 +198,25 @@ namespace SaveOpt
 
         public static bool GC_Prefix()
         {
-            return !inSave;
+            if (ModOptions.CollectAfterSave)
+            {
+                gcAllowed++;
+                if (gcAllowed <= 3)
+                {
+                    Debug.Log("[更好的存档] 放行 GC.Collect()："
+                        + (ModOptions.GcAuto ? "GC方式=自动（模组完全不干预）" : "存档后回收 GC=开")
+                        + "，第 " + gcAllowed + " 次");
+                }
+                return true;
+            }
+            if (!inSave) return true;
+
+            gcSkipped++;
+            if (gcSkipped <= 3)
+            {
+                Debug.Log("[更好的存档] 已跳过存档后的 GC.Collect()：手动模式下由模组接管回收时机，第 " + gcSkipped + " 次");
+            }
+            return false;
         }
 
         internal static double Now()
@@ -210,7 +230,9 @@ namespace SaveOpt
                 + Sink.Written + " 次，未压缩 " + (Sink.RawBytes / 1048576.0).ToString("F1") + " MB -> 落盘 "
                 + (Sink.OutBytes / 1048576.0).ToString("F1") + " MB，后台最近 压缩 "
                 + ((long)Sink.LastCompressMs) + " ms + 写盘 " + ((long)Sink.LastWriteMs) + " ms"
-                + (Sink.LastError.Length > 0 ? "，错误=" + Sink.LastError : "");
+                + (Sink.LastError.Length > 0 ? "，错误=" + Sink.LastError : "")
+                + " ｜ 存档后 GC.Collect 拦截：跳过 " + gcSkipped + " 次，放行 " + gcAllowed + " 次"
+                + (gcSkipped + gcAllowed == 0 ? "（整个会话游戏一次都没调用过 → 这项设置与本次存档无关）" : "");
         }
 
         public static IEnumerable<CodeInstruction> Transpile(IEnumerable<CodeInstruction> instructions)
