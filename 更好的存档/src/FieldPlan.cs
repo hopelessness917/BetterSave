@@ -13,7 +13,6 @@ namespace SaveOpt
     {
         internal FieldInfo Field;
         internal int Code;
-        internal int Mask;
         internal Func<object, object> Getter;
         internal Action<object, BinaryWriter> Fast;
         internal bool Checked;
@@ -31,24 +30,16 @@ namespace SaveOpt
         private static long checks;
         private static long rejections;
 
-        internal static FieldPlan For(FieldInfo f, KSerialization.TypeInfo ti, int mask)
+        internal static FieldPlan For(FieldInfo f, KSerialization.TypeInfo ti)
         {
             FieldPlan plan;
-            if (Cache.TryGetValue(f, out plan) && plan.Mask == mask) return plan;
-
-            int code = ti == null ? -1 : (((int)ti.info) & ValueMask);
-            if (plan == null)
-            {
-                plan = new FieldPlan();
-                plan.Field = f;
-                plan.Getter = Accessors.For(f);
-                Cache[f] = plan;
-            }
-            plan.Mask = mask;
-            plan.Code = code;
-            plan.Checked = false;
-            plan.Trusted = false;
-            plan.Fast = Build(f, code);
+            if (Cache.TryGetValue(f, out plan)) return plan;
+            plan = new FieldPlan();
+            plan.Field = f;
+            plan.Code = ti == null ? -1 : (((int)ti.info) & ValueMask);
+            plan.Getter = Accessors.For(f);
+            plan.Fast = Build(f, plan.Code);
+            Cache[f] = plan;
             return plan;
         }
 
@@ -125,93 +116,106 @@ namespace SaveOpt
         {
             try
             {
+                Type ft = f.FieldType;
                 var objP = Expr.Parameter(typeof(object), "o");
                 var wP = Expr.Parameter(typeof(BinaryWriter), "w");
-                Expr body = BuildExpr(f, code, objP, wP);
-                if (body == null) return null;
+                Expr inst = f.DeclaringType.IsValueType
+                    ? (Expr)Expr.Unbox(objP, f.DeclaringType)
+                    : Expr.Convert(objP, f.DeclaringType);
+                Expr fld = Expr.Field(inst, f);
+                Expr body;
+
+                switch (code)
+                {
+                    case 1:
+                        if (ft != typeof(sbyte)) return null;
+                        body = Call(wP, typeof(sbyte), fld);
+                        break;
+                    case 2:
+                        if (ft != typeof(byte)) return null;
+                        body = Call(wP, typeof(byte), fld);
+                        break;
+                    case 3:
+                        if (ft != typeof(bool)) return null;
+                        body = Call(wP, typeof(byte), Expr.Condition(fld, Expr.Constant((byte)1), Expr.Constant((byte)0)));
+                        break;
+                    case 4:
+                        if (ft != typeof(short)) return null;
+                        body = Call(wP, typeof(short), fld);
+                        break;
+                    case 5:
+                        if (ft != typeof(ushort)) return null;
+                        body = Call(wP, typeof(ushort), fld);
+                        break;
+                    case 6:
+                        if (ft != typeof(int)) return null;
+                        body = Call(wP, typeof(int), fld);
+                        break;
+                    case 7:
+                        if (ft != typeof(uint)) return null;
+                        body = Call(wP, typeof(uint), fld);
+                        break;
+                    case 8:
+                        if (ft != typeof(long)) return null;
+                        body = Call(wP, typeof(long), fld);
+                        break;
+                    case 9:
+                        if (ft != typeof(ulong)) return null;
+                        body = Call(wP, typeof(ulong), fld);
+                        break;
+                    case 10:
+                        if (ft != typeof(float)) return null;
+                        body = Expr.Call(SingleFast, wP, fld);
+                        break;
+                    case 11:
+                        if (ft != typeof(double)) return null;
+                        body = Call(wP, typeof(double), fld);
+                        break;
+                    case 12:
+                        if (ft != typeof(string)) return null;
+                        body = Expr.Call(KleiString, wP, fld);
+                        break;
+                    case 13:
+                        if (!ft.IsEnum || Enum.GetUnderlyingType(ft) != typeof(int)) return null;
+                        body = Call(wP, typeof(int), Expr.Convert(fld, typeof(int)));
+                        break;
+                    case 14:
+                        if (ft != typeof(Vector2I)) return null;
+                        body = Expr.Block(
+                            Call(wP, typeof(int), Expr.Field(fld, "x")),
+                            Call(wP, typeof(int), Expr.Field(fld, "y")));
+                        break;
+                    case 15:
+                        if (ft != typeof(Vector2)) return null;
+                        body = Expr.Block(
+                            Expr.Call(SingleFast, wP, Expr.Field(fld, "x")),
+                            Expr.Call(SingleFast, wP, Expr.Field(fld, "y")));
+                        break;
+                    case 16:
+                        if (ft != typeof(Vector3)) return null;
+                        body = Expr.Block(
+                            Expr.Call(SingleFast, wP, Expr.Field(fld, "x")),
+                            Expr.Call(SingleFast, wP, Expr.Field(fld, "y")),
+                            Expr.Call(SingleFast, wP, Expr.Field(fld, "z")));
+                        break;
+                    case 23:
+                        if (ft != typeof(Color)) return null;
+                        body = Expr.Block(
+                            Call(wP, typeof(byte), ToByte(Expr.Field(fld, "r"))),
+                            Call(wP, typeof(byte), ToByte(Expr.Field(fld, "g"))),
+                            Call(wP, typeof(byte), ToByte(Expr.Field(fld, "b"))),
+                            Call(wP, typeof(byte), ToByte(Expr.Field(fld, "a"))));
+                        break;
+                    default:
+                        return null;
+                }
+
                 return Expr.Lambda<Action<object, BinaryWriter>>(body, objP, wP).Compile();
             }
             catch (Exception e)
             {
                 Debug.LogWarning("[更好的存档] 快速写入编译失败，回退原路径: " + f.DeclaringType.Name + "." + f.Name + " : " + e.Message);
                 return null;
-            }
-        }
-
-        internal static Expr BuildExpr(FieldInfo f, int code, Expr objP, Expr wP)
-        {
-            Type ft = f.FieldType;
-            Expr inst = f.DeclaringType.IsValueType
-                ? (Expr)Expr.Unbox(objP, f.DeclaringType)
-                : Expr.Convert(objP, f.DeclaringType);
-            Expr fld = Expr.Field(inst, f);
-
-            switch (code)
-            {
-                case 1:
-                    if (ft != typeof(sbyte)) return null;
-                    return Call(wP, typeof(sbyte), fld);
-                case 2:
-                    if (ft != typeof(byte)) return null;
-                    return Call(wP, typeof(byte), fld);
-                case 3:
-                    if (ft != typeof(bool)) return null;
-                    return Call(wP, typeof(byte), Expr.Condition(fld, Expr.Constant((byte)1), Expr.Constant((byte)0)));
-                case 4:
-                    if (ft != typeof(short)) return null;
-                    return Call(wP, typeof(short), fld);
-                case 5:
-                    if (ft != typeof(ushort)) return null;
-                    return Call(wP, typeof(ushort), fld);
-                case 6:
-                    if (ft != typeof(int)) return null;
-                    return Call(wP, typeof(int), fld);
-                case 7:
-                    if (ft != typeof(uint)) return null;
-                    return Call(wP, typeof(uint), fld);
-                case 8:
-                    if (ft != typeof(long)) return null;
-                    return Call(wP, typeof(long), fld);
-                case 9:
-                    if (ft != typeof(ulong)) return null;
-                    return Call(wP, typeof(ulong), fld);
-                case 10:
-                    if (ft != typeof(float)) return null;
-                    return Expr.Call(SingleFast, wP, fld);
-                case 11:
-                    if (ft != typeof(double)) return null;
-                    return Call(wP, typeof(double), fld);
-                case 12:
-                    if (ft != typeof(string)) return null;
-                    return Expr.Call(KleiString, wP, fld);
-                case 13:
-                    if (!ft.IsEnum || Enum.GetUnderlyingType(ft) != typeof(int)) return null;
-                    return Call(wP, typeof(int), Expr.Convert(fld, typeof(int)));
-                case 14:
-                    if (ft != typeof(Vector2I)) return null;
-                    return Expr.Block(
-                        Call(wP, typeof(int), Expr.Field(fld, "x")),
-                        Call(wP, typeof(int), Expr.Field(fld, "y")));
-                case 15:
-                    if (ft != typeof(Vector2)) return null;
-                    return Expr.Block(
-                        Expr.Call(SingleFast, wP, Expr.Field(fld, "x")),
-                        Expr.Call(SingleFast, wP, Expr.Field(fld, "y")));
-                case 16:
-                    if (ft != typeof(Vector3)) return null;
-                    return Expr.Block(
-                        Expr.Call(SingleFast, wP, Expr.Field(fld, "x")),
-                        Expr.Call(SingleFast, wP, Expr.Field(fld, "y")),
-                        Expr.Call(SingleFast, wP, Expr.Field(fld, "z")));
-                case 23:
-                    if (ft != typeof(Color)) return null;
-                    return Expr.Block(
-                        Call(wP, typeof(byte), ToByte(Expr.Field(fld, "r"))),
-                        Call(wP, typeof(byte), ToByte(Expr.Field(fld, "g"))),
-                        Call(wP, typeof(byte), ToByte(Expr.Field(fld, "b"))),
-                        Call(wP, typeof(byte), ToByte(Expr.Field(fld, "a"))));
-                default:
-                    return null;
             }
         }
 

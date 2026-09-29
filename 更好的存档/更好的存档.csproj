@@ -157,6 +157,8 @@
       Lines="staticID: $(ModStaticID);description: &quot;$(ModDescription)&quot;;title: &quot;$(ModTitle)&quot;" />
     <WriteLinesToFile File="$(RepoModInfoYaml)" Overwrite="true" Encoding="UTF-8"
       Lines="APIVersion: $(APIVersion);minimumSupportedBuild: $(MinimumSupportedBuild);version: v$(ModVersion);supportedContent: $(SupportedContent)" />
+    <Exec Condition="'$(OS)' != 'Unix'"
+      Command="powershell -NoProfile -ExecutionPolicy Bypass -Command &quot;foreach ($f in '$(RepoModYaml)','$(RepoModInfoYaml)') { $b = [IO.File]::ReadAllBytes($f); if ($b.Length -ge 3 -and $b[0] -eq 239 -and $b[1] -eq 187 -and $b[2] -eq 191) { $n = $b.Length - 1; [byte[]]$o = $b[3..$n]; [IO.File]::WriteAllBytes($f, $o) } }&quot;" />
   </Target>
   <Target Name="MergePLib" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
     <PropertyGroup>
