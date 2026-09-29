@@ -9,7 +9,7 @@
     <ProjectGuid>{D6169594-3B07-4C2C-B86B-9462C89814CC}</ProjectGuid>
     <OutputType>Library</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>更好的存档</RootNamespace>
+    <RootNamespace>SaveOpt</RootNamespace>
     <AssemblyName>更好的存档</AssemblyName>
     <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
     <GameLibsFolder Condition="'$(GameLibsFolder)' == ''">C:\Program Files (x86)\Steam\steamapps\common\OxygenNotIncluded\OxygenNotIncluded_Data\Managed</GameLibsFolder>
@@ -33,6 +33,18 @@
     <DefineConstants>TRACE</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup>
+    <ModStaticID>BetterSave</ModStaticID>
+    <ModTitle>更好的存档</ModTitle>
+    <ModDescription>把存档时间理论提高70%</ModDescription>
+    <ModVersion>2.10.0</ModVersion>
+    <MinimumSupportedBuild>719533</MinimumSupportedBuild>
+    <APIVersion>2</APIVersion>
+    <SupportedContent>ALL</SupportedContent>
+    <GeneratedVersionFile>$(MSBuildProjectDirectory)\Properties\ModVersion.g.cs</GeneratedVersionFile>
+    <RepoModYaml>$(MSBuildProjectDirectory)\mod.yaml</RepoModYaml>
+    <RepoModInfoYaml>$(MSBuildProjectDirectory)\mod_info.yaml</RepoModInfoYaml>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="0Harmony">
@@ -125,24 +137,9 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="src\ModLoader.cs" />
-    <Compile Include="src\STRINGS.cs" />
-    <Compile Include="src\ModLocalization.cs" />
-    <Compile Include="src\ModOptions.cs" />
-    <Compile Include="src\BetterSaveOptions.cs" />
-    <Compile Include="src\SavePatch.cs" />
-    <Compile Include="src\SerializerPatch.cs" />
-    <Compile Include="src\FieldPlan.cs" />
-    <Compile Include="src\IsDefinedPatch.cs" />
-    <Compile Include="src\Sink.cs" />
-    <Compile Include="src\SaveBuffer.cs" />
-    <Compile Include="src\PooledStream.cs" />
-    <Compile Include="src\GcTuner.cs" />
-    <Compile Include="src\GcModeGate.cs" />
-    <Compile Include="src\FrameWatch.cs" />
-    <Compile Include="src\ThumbnailAsync.cs" />
-    <Compile Include="src\SaveTransform.cs" />
+    <Compile Include="src\**\*.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="$(GeneratedVersionFile)" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="ILRepack" Version="2.0.48" GeneratePathProperty="true" PrivateAssets="all" />
@@ -151,6 +148,16 @@
     <TranslationFiles Include="translations\*.po" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <Target Name="GenerateModVersion" BeforeTargets="BeforeCompile">
+    <WriteLinesToFile File="$(GeneratedVersionFile)" Overwrite="true" Encoding="UTF-8"
+      Lines="using System.Reflection%3B;[assembly: AssemblyVersion(&quot;$(ModVersion).0&quot;)];[assembly: AssemblyFileVersion(&quot;$(ModVersion).0&quot;)]" />
+  </Target>
+  <Target Name="GenerateModYaml" BeforeTargets="BeforeBuild">
+    <WriteLinesToFile File="$(RepoModYaml)" Overwrite="true" Encoding="UTF-8"
+      Lines="staticID: $(ModStaticID);description: &quot;$(ModDescription)&quot;;title: &quot;$(ModTitle)&quot;" />
+    <WriteLinesToFile File="$(RepoModInfoYaml)" Overwrite="true" Encoding="UTF-8"
+      Lines="APIVersion: $(APIVersion);minimumSupportedBuild: $(MinimumSupportedBuild);version: v$(ModVersion);supportedContent: $(SupportedContent)" />
+  </Target>
   <Target Name="MergePLib" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
     <PropertyGroup>
       <_MergedDir>$(MSBuildProjectDirectory)\$(OutputPath)merged</_MergedDir>
@@ -159,11 +166,12 @@
       <_PLibDll>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)\libs\PLib.dll'))</_PLibDll>
       <_OutDll>$([System.IO.Path]::GetFullPath('$(_MergedDir)\$(AssemblyName).dll'))</_OutDll>
       <_AbsOutputPath>$([System.IO.Path]::GetFullPath('$(TargetDir)').TrimEnd('\'))</_AbsOutputPath>
+      <_AbsGameLibs>$([System.IO.Path]::GetFullPath('$(GameLibsFolder)').TrimEnd('\'))</_AbsGameLibs>
     </PropertyGroup>
     <Error Condition="!Exists('$(_ILRepackExe)')" Text="找不到 ILRepack.exe（$(PkgILRepack)）。请先用 msbuild /t:Restore 还原 NuGet 包。" />
     <Error Condition="!Exists('$(_PLibDll)')" Text="找不到 libs\PLib.dll。请从 https://github.com/peterhaneve/ONIMods/releases/tag/PLib4.25 下载官方 PLib 4.25 放进 libs\ 目录（许可证见 libs\PLib.LICENSE.txt）。" />
     <MakeDir Directories="$(_MergedDir)" />
-    <Exec Command="&quot;$(_ILRepackExe)&quot; /out:&quot;$(_OutDll)&quot; /internalize /parallel &quot;$(_MainDll)&quot; &quot;$(_PLibDll)&quot; /lib:&quot;$(_AbsOutputPath)&quot; /lib:&quot;$(GameLibsFolder)&quot;"
+    <Exec Command="&quot;$(_ILRepackExe)&quot; /out:&quot;$(_OutDll)&quot; /internalize /parallel &quot;$(_MainDll)&quot; &quot;$(_PLibDll)&quot; /lib:&quot;$(_AbsOutputPath)&quot; /lib:&quot;$(_AbsGameLibs)&quot;"
           WorkingDirectory="$(PkgILRepack)\tools" ConsoleToMSBuild="true" />
     <Message Importance="high" Text="已把 PLib 合并进 $(_OutDll)" />
   </Target>
@@ -172,9 +180,11 @@
       <_DeploySource Condition="Exists('$(MSBuildProjectDirectory)\$(OutputPath)merged\$(AssemblyName).dll')">$(MSBuildProjectDirectory)\$(OutputPath)merged\$(AssemblyName).dll</_DeploySource>
       <_DeploySource Condition="'$(_DeploySource)' == ''">$(TargetPath)</_DeploySource>
     </PropertyGroup>
+    <Error Condition="!Exists('$(RepoModYaml)') Or !Exists('$(RepoModInfoYaml)')" Text="缺少 mod.yaml / mod_info.yaml（应由 GenerateModYaml 生成）。" />
     <MakeDir Directories="$(ModFolder)" />
     <Copy SourceFiles="$(_DeploySource)" DestinationFiles="$(ModFolder)\BetterSave.dll" />
-    <Message Importance="high" Text="已部署到 $(ModFolder)\BetterSave.dll（来源 $(_DeploySource)）" />
+    <Copy SourceFiles="$(RepoModYaml);$(RepoModInfoYaml)" DestinationFolder="$(ModFolder)" SkipUnchangedFiles="true" />
+    <Message Importance="high" Text="已部署 BetterSave.dll + mod.yaml + mod_info.yaml（版本 v$(ModVersion)）到 $(ModFolder)" />
     <Error Condition="'@(TranslationFiles)' == ''" Text="找不到 translations\*.po。缺了它们，模组选项面板会直接显示 STRINGS.* 原始键名（而不是中/英文案）。" />
     <MakeDir Directories="$(ModFolder)\translations" />
     <Copy SourceFiles="@(TranslationFiles)" DestinationFolder="$(ModFolder)\translations" SkipUnchangedFiles="true" />

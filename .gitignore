@@ -7,3 +7,4 @@ obj/
 *.pdb
 savverify/
 Directory.Build.props.user
+更好的存档/Properties/ModVersion.g.cs
